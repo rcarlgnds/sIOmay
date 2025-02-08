@@ -3,54 +3,129 @@ package pages
 import (
 	"fmt"
 	"fyne.io/fyne/v2"
-	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
-	"image/color"
+	helper "sIOmay/helpers"
+	"sIOmay/object"
 )
 
+func updateConnectButtonState(connectButton *widget.Button, selectedComputer []string) {
+	if len(selectedComputer) > 0 {
+		connectButton.Importance = widget.HighImportance
+		connectButton.Enable()
+	} else {
+		connectButton.Disable()
+	}
+}
+
 func ControlPanel(window fyne.Window) fyne.CanvasObject {
-	// Header
-	serverIPLabel := widget.NewLabel("Server IP : 10.22.225.141")
-	backButton := widget.NewButtonWithIcon("Back", theme.NavigateBackIcon(), func() {
-		window.SetContent(Opening(window))
-	})
+	serverIP, _ := helper.GetServerIP()
+	var connectButton *widget.Button
 
-	header := container.NewHBox(backButton, layout.NewSpacer(), serverIPLabel)
-
-	// Body
-	var computerList []string
-	for i := 1; i <= 40; i++ {
-		computerList = append(computerList, fmt.Sprintf("PC %02d", i))
+	// Left Part
+	//computerList := helper.GetAllClients(serverIP)
+	// DEBUG
+	var computerList []object.Computer
+	for i := 1; i <= 41; i++ {
+		computerList = append(computerList, object.Computer{
+			ComputerIP: fmt.Sprintf("%s.%d", helper.GetNetworkPrefix(serverIP), i),
+			Status:     "Available",
+		})
 	}
 
 	var computerBoxes []fyne.CanvasObject
-	for _, name := range computerList {
-		rect := canvas.NewRectangle(color.White)
-		rect.SetMinSize(fyne.NewSize(50, 20))
+	var selectedComputer []string
+	for _, computer := range computerList {
+		button := widget.NewButton(computer.ComputerIP, nil)
 
-		text := canvas.NewText(name, color.Black)
-		text.Alignment = fyne.TextAlignCenter
-		text.TextSize = 14
+		switch computer.Status {
+		case "Selected":
+			button.Importance = widget.SuccessImportance
+		case "Unavailable":
+			button.Importance = widget.DangerImportance
+		}
 
-		box := container.NewStack(rect, container.New(layout.NewCenterLayout(), text))
-		computerBoxes = append(computerBoxes, box)
+		if computer.ComputerIP == serverIP {
+			button.Importance = widget.WarningImportance
+			button.OnTapped = func() {}
+			button.Disable()
+		}
+
+		button.OnTapped = func(b *widget.Button) func() {
+			return func() {
+				if b.Importance != widget.SuccessImportance {
+					b.Importance = widget.SuccessImportance
+					selectedComputer = append(selectedComputer, b.Text)
+				} else {
+					b.Importance = widget.MediumImportance
+					for i, ip := range selectedComputer {
+						if ip == b.Text {
+							selectedComputer = append(selectedComputer[:i], selectedComputer[i+1:]...)
+							break
+						}
+					}
+				}
+				updateConnectButtonState(connectButton, selectedComputer)
+				b.Refresh()
+			}
+		}(button)
+		button.Resize(fyne.NewSize(0, 0))
+		computerBoxes = append(computerBoxes, button)
 	}
-	computerGrid := container.NewGridWithColumns(5, computerBoxes...)
+	leftPart := container.NewGridWithColumns(5, computerBoxes...)
 
-	// Footer
-	scanButton := widget.NewButton("Scan", func() {
+	// Right Part
+	// [Upper Right]
+	serverIPLabel := widget.NewLabelWithStyle(
+		fmt.Sprintf("Server IP : %s", serverIP),
+		fyne.TextAlignCenter,
+		fyne.TextStyle{Bold: true, Italic: false},
+	)
+
+	backButton := widget.NewButtonWithIcon("Back", theme.NavigateBackIcon(), func() {
+		window.SetContent(Opening(window))
+	})
+	header := container.NewHBox(backButton, layout.NewSpacer(), serverIPLabel)
+
+	selectAllCheckbox := widget.NewCheck("Select All", func(checked bool) {
+		if checked {
+			// Select all PCs
+			for _, button := range computerBoxes {
+				if b, ok := button.(*widget.Button); ok && b.Importance != widget.WarningImportance {
+					b.Importance = widget.SuccessImportance
+					selectedComputer = append(selectedComputer, b.Text)
+					b.Refresh()
+				}
+			}
+		} else {
+			// Unselect all PCs
+			selectedComputer = nil
+			for _, button := range computerBoxes {
+				if b, ok := button.(*widget.Button); ok && b.Importance != widget.WarningImportance {
+					b.Importance = widget.MediumImportance
+					b.Refresh()
+				}
+			}
+		}
+		updateConnectButtonState(connectButton, selectedComputer)
+	})
+
+	refreshButton := widget.NewButton("Refresh", func() {
 		fmt.Println("Scanning for computers...")
 	})
 
-	connectButton := widget.NewButton("Connect", func() {
-		fmt.Println("Connecting...")
+	connectButton = widget.NewButton("Connect", func() {
+		fmt.Printf("Connecting to %v\n", selectedComputer)
+		//window.Hide()
 	})
 
-	footer := container.NewHBox(scanButton, layout.NewSpacer(), connectButton)
+	updateConnectButtonState(connectButton, selectedComputer)
+	rightPart := container.NewVBox(header, layout.NewSpacer(), selectAllCheckbox, refreshButton, connectButton)
 
-	controlPanelPage := container.NewBorder(header, footer, nil, nil, computerGrid)
+	controlPanelPage := container.NewHSplit(leftPart, rightPart)
+	controlPanelPage.SetOffset(0.6)
+
 	return controlPanelPage
 }

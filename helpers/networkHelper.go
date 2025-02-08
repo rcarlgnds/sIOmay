@@ -3,7 +3,13 @@ package helpers
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/go-ping/ping"
 	"net"
+	"sIOmay/object"
+	"sort"
+	"strings"
+	"sync"
+	"time"
 )
 
 func GetServerIP() (string, error) {
@@ -30,6 +36,84 @@ func GetServerIP() (string, error) {
 		}
 	}
 	return "", fmt.Errorf("no valid IP address found")
+}
+
+func GetNetworkPrefix(ip string) string {
+	octets := strings.Split(ip, ".")
+	if len(octets) < 3 {
+		return ""
+	}
+	return fmt.Sprintf("%s.%s.%s", octets[0], octets[1], octets[2])
+}
+
+func pingIP(ip string, timeout time.Duration, wg *sync.WaitGroup, results chan<- object.Computer) {
+	defer wg.Done()
+
+	pinger, err := ping.NewPinger(ip)
+	if err != nil {
+		return
+	}
+
+	pinger.Count = 1
+	pinger.Timeout = timeout
+	pinger.SetPrivileged(true)
+
+	err = pinger.Run()
+	if err != nil {
+		return
+	}
+
+	stats := pinger.Statistics()
+	if stats.PacketLoss == 0 {
+		results <- object.Computer{ComputerIP: ip, Status: "Available"}
+	}
+}
+
+func ipToInt(ip string) int {
+	parsedIP := net.ParseIP(ip)
+	if parsedIP == nil {
+		return 0
+	}
+	ipv4 := parsedIP.To4()
+	if ipv4 == nil {
+		return 0
+	}
+	return int(ipv4[0])<<24 | int(ipv4[1])<<16 | int(ipv4[2])<<8 | int(ipv4[3])
+}
+
+func GetAllClients(serverIP string) []object.Computer {
+	var clients []object.Computer
+	networkPrefix := GetNetworkPrefix(serverIP)
+	if networkPrefix == "" {
+		fmt.Println("Invalid Server IP")
+		return clients
+	}
+
+	var wg sync.WaitGroup
+	results := make(chan object.Computer, 255)
+
+	for i := 1; i <= 255; i++ {
+		clientIP := fmt.Sprintf("%s.%d", networkPrefix, i)
+
+		wg.Add(1)
+		go pingIP(clientIP, 500*time.Millisecond, &wg, results)
+		fmt.Println(clientIP)
+	}
+
+	go func() {
+		wg.Wait()
+		close(results)
+	}()
+
+	for client := range results {
+		clients = append(clients, client)
+	}
+
+	// Sort clients by IP
+	sort.Slice(clients, func(i, j int) bool {
+		return ipToInt(clients[i].ComputerIP) < ipToInt(clients[j].ComputerIP)
+	})
+	return clients
 }
 
 func SendMouseMessageToClients(mouse *Mouse, clientAddresses map[string]*net.UDPAddr, connection *net.UDPConn) {

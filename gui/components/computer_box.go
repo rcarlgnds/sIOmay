@@ -8,12 +8,12 @@ import (
 	"image/color"
 )
 
-type Box struct {
+type Computer struct {
 	IP     string
 	Status string
 }
 
-func ComputerBox(computer *Box, onClick func()) fyne.CanvasObject {
+func ComputerBox(computer *Computer, onClick func()) fyne.CanvasObject {
 	var boxColor color.Color
 	var _ color.Color
 
@@ -35,8 +35,7 @@ func ComputerBox(computer *Box, onClick func()) fyne.CanvasObject {
 
 	// Button
 	button := widget.NewButton(computer.IP, onClick)
-	button.Importance = widget.HighImportance // Memberi efek lebih jelas
-
+	button.Importance = widget.HighImportance
 	// Stack container
 	box := container.NewStack(rect, container.NewCenter(button))
 
