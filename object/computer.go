@@ -1,6 +1,6 @@
 package object
 
 type Computer struct {
-	ComputerIP string
-	Status     string
+	IPAddress string
+	Status    string
 }

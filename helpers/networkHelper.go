@@ -65,7 +65,7 @@ func pingIP(ip string, timeout time.Duration, wg *sync.WaitGroup, results chan<-
 
 	stats := pinger.Statistics()
 	if stats.PacketLoss == 0 {
-		results <- object.Computer{ComputerIP: ip, Status: "Available"}
+		results <- object.Computer{IPAddress: ip, Status: "Available"}
 	}
 }
 
@@ -92,7 +92,7 @@ func GetAllClients(serverIP string) []object.Computer {
 	var wg sync.WaitGroup
 	results := make(chan object.Computer, 255)
 
-	for i := 1; i <= 255; i++ {
+	for i := 1; i <= 254; i++ {
 		clientIP := fmt.Sprintf("%s.%d", networkPrefix, i)
 
 		wg.Add(1)
@@ -111,7 +111,7 @@ func GetAllClients(serverIP string) []object.Computer {
 
 	// Sort clients by IP
 	sort.Slice(clients, func(i, j int) bool {
-		return ipToInt(clients[i].ComputerIP) < ipToInt(clients[j].ComputerIP)
+		return ipToInt(clients[i].IPAddress) < ipToInt(clients[j].IPAddress)
 	})
 	return clients
 }
