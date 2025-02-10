@@ -12,9 +12,17 @@ func ControlPanel(window fyne.Window) fyne.CanvasObject {
 
 	connectButton := helper.InitConnectButton(&selectedComputer)
 
+	backButton := func() {
+		window.SetContent(Opening(window))
+	}
+
+	refreshButton := func() {
+		window.SetContent(ControlPanel(window))
+	}
+
 	leftPart, computerBoxes := helper.InitLeftPanel(serverIP, &selectedComputer, connectButton)
 
-	rightPart := helper.InitRightPanel(window, serverIP, &selectedComputer, computerBoxes, connectButton)
+	rightPart := helper.InitRightPanel(window, serverIP, &selectedComputer, computerBoxes, connectButton, backButton, refreshButton)
 
 	controlPanelPage := container.NewHSplit(leftPart, rightPart)
 	controlPanelPage.SetOffset(0.6)
