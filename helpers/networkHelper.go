@@ -46,11 +46,12 @@ func GetNetworkPrefix(ip string) string {
 	return fmt.Sprintf("%s.%s.%s", octets[0], octets[1], octets[2])
 }
 
-func pingIP(ip string, timeout time.Duration, wg *sync.WaitGroup, results chan<- object.Computer) {
+func pingIP(ip string, timeout time.Duration, wg *sync.WaitGroup, results chan<- object.Computer, statusChan chan<- string) {
 	defer wg.Done()
 
 	pinger, err := ping.NewPinger(ip)
 	if err != nil {
+		statusChan <- fmt.Sprintf("[✘] %s: Error initializing pinger", ip)
 		return
 	}
 
@@ -60,12 +61,16 @@ func pingIP(ip string, timeout time.Duration, wg *sync.WaitGroup, results chan<-
 
 	err = pinger.Run()
 	if err != nil {
+		statusChan <- fmt.Sprintf("[✘] %s: Ping failed", ip)
 		return
 	}
 
 	stats := pinger.Statistics()
 	if stats.PacketLoss == 0 {
 		results <- object.Computer{IPAddress: ip, Status: "Available"}
+		statusChan <- fmt.Sprintf("[✔] %s: Available", ip)
+	} else {
+		statusChan <- fmt.Sprintf("[✘] %s: Unreachable", ip)
 	}
 }
 
@@ -91,28 +96,39 @@ func GetAllClients(serverIP string) []object.Computer {
 
 	var wg sync.WaitGroup
 	results := make(chan object.Computer, 255)
+	statusChan := make(chan string, 255) // Channel untuk cetak status ping
 
+	// Memulai goroutine untuk mencetak status secara real-time
+	go func() {
+		for status := range statusChan {
+			fmt.Println(status)
+		}
+	}()
+
+	// Ping
 	for i := 1; i <= 254; i++ {
 		clientIP := fmt.Sprintf("%s.%d", networkPrefix, i)
 
 		wg.Add(1)
-		go pingIP(clientIP, 500*time.Millisecond, &wg, results)
-		fmt.Println(clientIP)
+		go pingIP(clientIP, 500*time.Millisecond, &wg, results, statusChan)
 	}
 
 	go func() {
 		wg.Wait()
 		close(results)
+		close(statusChan)
 	}()
 
+	// Result
 	for client := range results {
 		clients = append(clients, client)
 	}
 
-	// Sort clients by IP
+	// Sorting berdasarkan IP
 	sort.Slice(clients, func(i, j int) bool {
 		return ipToInt(clients[i].IPAddress) < ipToInt(clients[j].IPAddress)
 	})
+
 	return clients
 }
 

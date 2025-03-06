@@ -10,7 +10,7 @@ import (
 	"sIOmay/object"
 )
 
-func InitHeader(window fyne.Window, serverIP string) *fyne.Container {
+func InitHeader(window fyne.Window, serverIP string, backCallback func()) *fyne.Container {
 	serverIPLabel := widget.NewLabelWithStyle(
 		fmt.Sprintf("Server IP : %s", serverIP),
 		fyne.TextAlignCenter,
@@ -18,7 +18,7 @@ func InitHeader(window fyne.Window, serverIP string) *fyne.Container {
 	)
 
 	backButton := widget.NewButtonWithIcon("Back", theme.NavigateBackIcon(), func() {
-		//window.SetContent(pages.Opening(window))
+		backCallback()
 	})
 
 	return container.NewHBox(backButton, layout.NewSpacer(), serverIPLabel)
@@ -36,22 +36,66 @@ func InitLeftPanel(serverIP string, selectedComputer *[]string, connectButton *w
 	return leftPart, computerBoxes
 }
 
-func InitRightPanel(
+func InitManualRightPanel(
 	window fyne.Window,
 	serverIP string,
 	selectedComputer *[]string,
 	computerBoxes []fyne.CanvasObject,
 	connectButton *widget.Button,
+	backCallback func(),
+	refreshCallback func(),
 ) *fyne.Container {
-	header := InitHeader(window, serverIP)
+	header := InitHeader(window, serverIP, backCallback)
+
+	networkAddressLabel := widget.NewLabel("Network Address")
+	networkAddressInputField := widget.NewEntry()
+	networkAddressInputField.SetPlaceHolder("Input Network Address Here")
+
+	fromLabel := widget.NewLabel("From")
+	fromInputField := widget.NewEntry()
+	fromInputField.SetPlaceHolder("Input From Here")
+
+	toLabel := widget.NewLabel("To")
+	toInputField := widget.NewEntry()
+	toInputField.SetPlaceHolder("Input To Here")
+
+	middleContainer := container.NewVBox(networkAddressLabel, networkAddressInputField, fromLabel, fromInputField, toLabel, toInputField)
+
+	selectAllCheckbox := widget.NewCheck("Select All", func(checked bool) {
+		HandleSelectAll(checked, selectedComputer, computerBoxes, connectButton)
+	})
+
+	initiateConnectionButton := widget.NewButton("Initiate Connection", func() {
+
+	})
+
+	refreshButton := widget.NewButton("Refresh", func() {
+		refreshCallback()
+	})
+
+	UpdateConnectButtonState(connectButton, *selectedComputer)
+
+	return container.NewVBox(header, layout.NewSpacer(), middleContainer, layout.NewSpacer(), selectAllCheckbox, initiateConnectionButton, refreshButton, connectButton)
+}
+
+func InitAutoRightPanel(
+	window fyne.Window,
+	serverIP string,
+	selectedComputer *[]string,
+	computerBoxes []fyne.CanvasObject,
+	connectButton *widget.Button,
+	backCallback func(),
+	refreshCallback func(),
+) *fyne.Container {
+	header := InitHeader(window, serverIP, backCallback)
 
 	selectAllCheckbox := widget.NewCheck("Select All", func(checked bool) {
 		HandleSelectAll(checked, selectedComputer, computerBoxes, connectButton)
 	})
 
 	refreshButton := widget.NewButton("Refresh", func() {
-		//fmt.Println("Scanning for computers...")
-		//computerBoxes, _ = UpdateComputerList(serverIP, selectedComputer, connectButton)
+		fmt.Println("Refreshing Page")
+		refreshCallback()
 	})
 
 	UpdateConnectButtonState(connectButton, *selectedComputer)
