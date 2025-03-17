@@ -28,6 +28,9 @@ func InitConnectButton(selectedComputer *[]string) *widget.Button {
 	return widget.NewButton("Connect", func() {
 		fmt.Printf("Connecting to %v\n", selectedComputer)
 		//window.Hide()
+
+		RunServer()
+		
 	})
 }
 

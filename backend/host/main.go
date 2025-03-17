@@ -8,7 +8,7 @@ import (
 )
 
 func main() {
-	serverIP := "10.22.65.123:8080"
+	serverIP := "10.22.65.120:8080"
 	serverAddress, err := net.ResolveUDPAddr("udp4", serverIP)
 	if err != nil {
 		fmt.Println("Error resolving server address:", err)

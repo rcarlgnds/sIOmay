@@ -5,12 +5,31 @@ import (
 	"fmt"
 	"github.com/go-ping/ping"
 	"net"
+	"os"
+	"os/exec"
 	"sIOmay/object"
 	"sort"
 	"strings"
 	"sync"
 	"time"
 )
+
+func RunServer() {
+	cmd := exec.Command("go", "run", "backend/server/main.go")
+
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+
+	// Pake Start() biar gk ngehalangin kode lain
+	// Waktu pake Run() langsung ke disable guinya wokwokwowk
+	err := cmd.Start()
+	if err != nil {
+		fmt.Println("Error starting server: ", err)
+		return
+	}
+
+	fmt.Println("Server started")
+}
 
 func GetServerIP() (string, error) {
 	interfaces, err := net.Interfaces()
