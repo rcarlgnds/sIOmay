@@ -3,7 +3,9 @@ package pages
 import (
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
+	"fyne.io/fyne/v2/widget"
 	helper "sIOmay/helpers"
+	"time"
 )
 
 func AutoControlPanel(window fyne.Window) fyne.CanvasObject {
@@ -11,6 +13,9 @@ func AutoControlPanel(window fyne.Window) fyne.CanvasObject {
 	var selectedComputer []string
 
 	connectButton := helper.InitConnectButton(&selectedComputer)
+	connectButton.OnTapped = func() {
+		window.SetContent(MinimizedAutoControlPanel(window))
+	}
 
 	backButton := func() {
 		window.SetContent(Opening(window))
@@ -27,4 +32,20 @@ func AutoControlPanel(window fyne.Window) fyne.CanvasObject {
 	controlPanelPage.SetOffset(0.6)
 
 	return controlPanelPage
+}
+
+func MinimizedAutoControlPanel(window fyne.Window) fyne.CanvasObject {
+
+	go func() {
+		time.Sleep(time.Millisecond * 100)
+		window.CenterOnScreen()
+		window.RequestFocus()
+
+	}()
+
+	stopButton := widget.NewButton("Stop", func() {
+		window.SetContent(AutoControlPanel(window))
+	})
+
+	return container.NewVBox(stopButton)
 }

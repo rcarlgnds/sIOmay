@@ -29,8 +29,8 @@ func InitConnectButton(selectedComputer *[]string) *widget.Button {
 		fmt.Printf("Connecting to %v\n", selectedComputer)
 		//window.Hide()
 
+		// Todo
 		RunServer()
-		
 	})
 }
 
