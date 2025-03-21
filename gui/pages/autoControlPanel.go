@@ -13,9 +13,9 @@ func AutoControlPanel(window fyne.Window) fyne.CanvasObject {
 	var selectedComputer []string
 
 	connectButton := helper.InitConnectButton(&selectedComputer)
-	connectButton.OnTapped = func() {
-		window.SetContent(MinimizedAutoControlPanel(window))
-	}
+	//connectButton.OnTapped = func() {
+	//	window.SetContent(MinimizedAutoControlPanel(window))
+	//}
 
 	backButton := func() {
 		window.SetContent(Opening(window))

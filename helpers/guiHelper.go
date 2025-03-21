@@ -30,7 +30,8 @@ func InitConnectButton(selectedComputer *[]string) *widget.Button {
 		//window.Hide()
 
 		// Todo
-		RunServer()
+		go RunServer()
+
 	})
 }
 
