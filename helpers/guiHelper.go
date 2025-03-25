@@ -7,21 +7,43 @@ import (
 	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
+	"runtime"
 	"sIOmay/object"
 )
 
 func InitHeader(window fyne.Window, serverIP string, backCallback func()) *fyne.Container {
+	os := runtime.GOOS
+
+	var osType string
+
+	switch os {
+	case "darwin":
+		osType = "Mac OS"
+	case "linux":
+		osType = "Linux"
+	case "windows":
+		osType = "Windows"
+	default:
+		osType = "Unknown OS"
+	}
+
+	backButton := widget.NewButtonWithIcon("Back", theme.NavigateBackIcon(), func() {
+		backCallback()
+	})
+
 	serverIPLabel := widget.NewLabelWithStyle(
 		fmt.Sprintf("Server IP : %s", serverIP),
 		fyne.TextAlignCenter,
 		fyne.TextStyle{Bold: true},
 	)
 
-	backButton := widget.NewButtonWithIcon("Back", theme.NavigateBackIcon(), func() {
-		backCallback()
-	})
+	osTypeLabel := widget.NewLabelWithStyle(
+		fmt.Sprintf("OS Type : %s", osType),
+		fyne.TextAlignCenter,
+		fyne.TextStyle{Bold: true},
+	)
 
-	return container.NewHBox(backButton, layout.NewSpacer(), serverIPLabel)
+	return container.NewHBox(backButton, layout.NewSpacer(), serverIPLabel, osTypeLabel)
 }
 
 func InitConnectButton(selectedComputer *[]string) *widget.Button {
