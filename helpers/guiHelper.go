@@ -32,13 +32,13 @@ func InitHeader(window fyne.Window, serverIP string, backCallback func()) *fyne.
 	})
 
 	serverIPLabel := widget.NewLabelWithStyle(
-		fmt.Sprintf("Server IP : %s", serverIP),
+		fmt.Sprintf("| %s |", serverIP),
 		fyne.TextAlignCenter,
 		fyne.TextStyle{Bold: true},
 	)
 
 	osTypeLabel := widget.NewLabelWithStyle(
-		fmt.Sprintf("OS Type : %s", osType),
+		fmt.Sprintf("| %s |", osType),
 		fyne.TextAlignCenter,
 		fyne.TextStyle{Bold: true},
 	)
