@@ -2,13 +2,18 @@ package helpers
 
 import (
 	"fmt"
+	"log"
+	"runtime"
+	"sIOmay/object"
+	"strings"
+	"time"
+
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
-	"runtime"
-	"sIOmay/object"
+	"github.com/go-ping/ping"
 )
 
 func InitHeader(window fyne.Window, serverIP string, backCallback func()) *fyne.Container {
@@ -48,7 +53,7 @@ func InitHeader(window fyne.Window, serverIP string, backCallback func()) *fyne.
 
 func InitConnectButton(selectedComputer *[]string) *widget.Button {
 	return widget.NewButton("Connect", func() {
-		fmt.Printf("Connecting to %v\n", selectedComputer)
+		fmt.Printf("Connecting to %v\n", *selectedComputer)
 		//window.Hide()
 
 		// Todo
@@ -134,26 +139,27 @@ func UpdateConnectButtonState(connectButton *widget.Button, selectedComputer []s
 		connectButton.Importance = widget.HighImportance
 		connectButton.Enable()
 	} else {
+		connectButton.Importance = widget.MediumImportance
 		connectButton.Disable()
 	}
 }
 
 func HandleSelectAll(checked bool, selectedComputer *[]string, computerBoxes []fyne.CanvasObject, connectButton *widget.Button) {
-	*selectedComputer = []string{} // Reset selectedComputer
+	*selectedComputer = []string{}
 
 	if checked {
-		for _, button := range computerBoxes {
-			if b, ok := button.(*widget.Button); ok && b.Importance != widget.WarningImportance {
-				b.Importance = widget.SuccessImportance
-				*selectedComputer = append(*selectedComputer, b.Text) // Tambahkan IP
-				b.Refresh()
+		for _, item := range computerBoxes {
+			if button, ok := item.(*widget.Button); ok && !button.Disabled() && button.Importance != widget.WarningImportance {
+				button.Importance = widget.SuccessImportance
+				*selectedComputer = append(*selectedComputer, button.Text)
+				button.Refresh()
 			}
 		}
 	} else {
-		for _, button := range computerBoxes {
-			if b, ok := button.(*widget.Button); ok && b.Importance != widget.WarningImportance {
-				b.Importance = widget.MediumImportance
-				b.Refresh()
+		for _, item := range computerBoxes {
+			if button, ok := item.(*widget.Button); ok && !button.Disabled() && button.Importance != widget.WarningImportance {
+				button.Importance = widget.MediumImportance
+				button.Refresh()
 			}
 		}
 	}
@@ -161,55 +167,113 @@ func HandleSelectAll(checked bool, selectedComputer *[]string, computerBoxes []f
 	UpdateConnectButtonState(connectButton, *selectedComputer)
 }
 
+func pingAndUpdate(button *widget.Button, ipAddress string) {
+	pinger, err := ping.NewPinger(ipAddress)
+	if err != nil {
+		log.Printf("Failed to create pinger for %s: %v", ipAddress, err)
+		return
+	}
+
+	pinger.Count = 1
+	pinger.Timeout = time.Second * 1
+	pinger.SetPrivileged(true) 
+
+	err = pinger.Run() 
+	if err != nil {
+		log.Printf("Pinger failed to run for %s: %v", ipAddress, err)
+	}
+
+	stats := pinger.Statistics()
+	if stats.PacketsRecv > 0 {
+		
+		button.Enable()
+		button.Importance = widget.MediumImportance
+	} else {
+		
+		button.Importance = widget.DangerImportance
+		button.Disable()
+	}
+	button.Refresh()
+}
+
 func UpdateComputerList(serverIP string, selectedComputer *[]string, connectButton *widget.Button) ([]fyne.CanvasObject, *fyne.Container) {
-	// Debug
 	var computerList []object.Computer
-	for i := 1; i <= 41; i++ {
+
+	
+
+	
+	lastDotIndex := strings.LastIndex(serverIP, ".")
+	networkPrefix := "10.22.65" 
+
+	if lastDotIndex != -1 {
+		
+		
+		networkPrefix = serverIP[:lastDotIndex]
+	} else {
+		log.Printf("Warning: Could not determine network prefix from server IP '%s'. Using default.", serverIP)
+	}
+
+
+	
+	for i := 101; i <= 141; i++ {
 		computer := object.Computer{
-			IPAddress: fmt.Sprintf("10.22.65.%v", i),
+			IPAddress: fmt.Sprintf("%s.%v", networkPrefix, i),
 			Status:    "Available",
 		}
 		computerList = append(computerList, computer)
 	}
+	
+	
 
-	//computerList := GetAllClients(serverIP)
+
+	
 	var computerBoxes []fyne.CanvasObject
 
 	for _, computer := range computerList {
-		button := widget.NewButton(computer.IPAddress, nil)
+		ipAddr := computer.IPAddress
+		button := widget.NewButton(ipAddr, nil)
 
-		switch computer.Status {
-		case "Selected":
-			button.Importance = widget.SuccessImportance
-		case "Unavailable":
-			button.Importance = widget.DangerImportance
-		}
-
-		if computer.IPAddress == serverIP {
+		if ipAddr == serverIP {
 			button.Importance = widget.WarningImportance
-			button.OnTapped = func() {}
 			button.Disable()
+		} else {
+			button.Importance = widget.LowImportance
+			button.Disable()
+			go pingAndUpdate(button, ipAddr)
 		}
 
-		button.OnTapped = func(b *widget.Button) func() {
-			return func() {
-				if b.Importance != widget.SuccessImportance {
-					b.Importance = widget.SuccessImportance
-					*selectedComputer = append(*selectedComputer, serverIP)
-				} else {
-					b.Importance = widget.MediumImportance
-					for i, ip := range *selectedComputer {
-						if ip == b.Text {
-							*selectedComputer = append((*selectedComputer)[:i], (*selectedComputer)[i+1:]...)
-							break
-						}
+		button.OnTapped = func() {
+			isCurrentlySelected := false
+			for _, ip := range *selectedComputer {
+				if ip == button.Text {
+					isCurrentlySelected = true
+					break
+				}
+			}
+
+			if !isCurrentlySelected {
+				button.Importance = widget.SuccessImportance
+				*selectedComputer = append(*selectedComputer, button.Text)
+			} else {
+				button.Importance = widget.MediumImportance
+				newSelection := []string{}
+				for _, ip := range *selectedComputer {
+					if ip != button.Text {
+						newSelection = append(newSelection, ip)
 					}
 				}
-				UpdateConnectButtonState(connectButton, *selectedComputer)
-				b.Refresh()
+				*selectedComputer = newSelection
 			}
-		}(button)
+			UpdateConnectButtonState(connectButton, *selectedComputer)
+			button.Refresh()
+		}
 		computerBoxes = append(computerBoxes, button)
 	}
 	return computerBoxes, container.NewGridWithColumns(5, computerBoxes...)
 }
+
+// Dummy RunServer function to avoid compile errors
+// func RunServer() {
+// 	log.Println("Server starting...")
+// 	// We will implement the actual server logic here later
+// }
