@@ -51,17 +51,6 @@ func InitHeader(window fyne.Window, serverIP string, backCallback func()) *fyne.
 	return container.NewHBox(backButton, layout.NewSpacer(), serverIPLabel, osTypeLabel)
 }
 
-func InitConnectButton(selectedComputer *[]string) *widget.Button {
-	return widget.NewButton("Connect", func() {
-		fmt.Printf("Connecting to %v\n", *selectedComputer)
-		//window.Hide()
-
-		// Todo
-		go RunServer()
-
-	})
-}
-
 func InitLeftPanel(serverIP string, selectedComputer *[]string, connectButton *widget.Button) (*fyne.Container, []fyne.CanvasObject) {
 	computerBoxes, leftPart := UpdateComputerList(serverIP, selectedComputer, connectButton)
 	return leftPart, computerBoxes
@@ -70,43 +59,100 @@ func InitLeftPanel(serverIP string, selectedComputer *[]string, connectButton *w
 func InitManualRightPanel(
 	window fyne.Window,
 	serverIP string,
-	selectedComputer *[]string,
-	computerBoxes []fyne.CanvasObject,
-	connectButton *widget.Button,
 	backCallback func(),
 	refreshCallback func(),
-) *fyne.Container {
+) (*fyne.Container, *widget.Entry, *widget.Entry, *widget.Entry, *widget.Button) {
 	header := InitHeader(window, serverIP, backCallback)
 
-	networkAddressLabel := widget.NewLabel("Network Address")
+	networkAddressLabel := widget.NewLabel("Network Address (e.g., 192.168.1)")
 	networkAddressInputField := widget.NewEntry()
-	networkAddressInputField.SetPlaceHolder("Input Network Address Here")
+	networkAddressInputField.SetPlaceHolder("192.168.1")
 
 	fromLabel := widget.NewLabel("From")
 	fromInputField := widget.NewEntry()
-	fromInputField.SetPlaceHolder("Input From Here")
+	fromInputField.SetPlaceHolder("101")
 
 	toLabel := widget.NewLabel("To")
 	toInputField := widget.NewEntry()
-	toInputField.SetPlaceHolder("Input To Here")
+	toInputField.SetPlaceHolder("141")
 
-	middleContainer := container.NewVBox(networkAddressLabel, networkAddressInputField, fromLabel, fromInputField, toLabel, toInputField)
+	// This is the button that will trigger the scan.
+	scanButton := widget.NewButton("Scan IP Range", nil) // Logic will be added in the pages package
+	scanButton.Importance = widget.HighImportance
 
-	selectAllCheckbox := widget.NewCheck("Select All", func(checked bool) {
-		HandleSelectAll(checked, selectedComputer, computerBoxes, connectButton)
-	})
-
-	initiateConnectionButton := widget.NewButton("Initiate Connection", func() {
-
-	})
-
-	refreshButton := widget.NewButton("Refresh", func() {
+	refreshButton := widget.NewButton("Refresh Page", func() {
 		refreshCallback()
 	})
 
-	UpdateConnectButtonState(connectButton, *selectedComputer)
+	// Note: We removed SelectAll and the main Connect button from here
+	// as they don't make sense until after a manual scan is complete.
+	rightPanel := container.NewVBox(
+		header,
+		layout.NewSpacer(),
+		networkAddressLabel,
+		networkAddressInputField,
+		fromLabel,
+		fromInputField,
+		toLabel,
+		toInputField,
+		layout.NewSpacer(),
+		scanButton,
+		refreshButton,
+	)
 
-	return container.NewVBox(header, layout.NewSpacer(), middleContainer, layout.NewSpacer(), selectAllCheckbox, initiateConnectionButton, refreshButton, connectButton)
+	return rightPanel, networkAddressInputField, fromInputField, toInputField, scanButton
+}
+
+func GenerateComputerGrid(
+	computerList []object.Computer,
+	serverIP string,
+	selectedComputer *[]string,
+	connectButton *widget.Button,
+) (*fyne.Container, []fyne.CanvasObject) {
+
+	var computerBoxes []fyne.CanvasObject
+
+	for _, computer := range computerList {
+		ipAddr := computer.IPAddress
+		button := widget.NewButton(ipAddr, nil)
+
+		if ipAddr == serverIP {
+			button.Importance = widget.WarningImportance
+			button.Disable()
+		} else {
+			button.Importance = widget.LowImportance
+			button.Disable()
+			go pingAndUpdate(button, ipAddr)
+		}
+
+		button.OnTapped = func() {
+			isCurrentlySelected := false
+			for _, ip := range *selectedComputer {
+				if ip == button.Text {
+					isCurrentlySelected = true
+					break
+				}
+			}
+
+			if !isCurrentlySelected {
+				button.Importance = widget.SuccessImportance
+				*selectedComputer = append(*selectedComputer, button.Text)
+			} else {
+				button.Importance = widget.MediumImportance
+				newSelection := []string{}
+				for _, ip := range *selectedComputer {
+					if ip != button.Text {
+						newSelection = append(newSelection, ip)
+					}
+				}
+				*selectedComputer = newSelection
+			}
+			UpdateConnectButtonState(connectButton, *selectedComputer)
+			button.Refresh()
+		}
+		computerBoxes = append(computerBoxes, button)
+	}
+	return container.NewGridWithColumns(5, computerBoxes...), computerBoxes
 }
 
 func InitAutoRightPanel(

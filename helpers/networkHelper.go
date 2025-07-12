@@ -3,33 +3,34 @@ package helpers
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/go-ping/ping"
 	"net"
-	"os"
-	"os/exec"
+
 	"sIOmay/object"
 	"sort"
 	"strings"
 	"sync"
 	"time"
+
+	// controller "sIOmay/controller"
+	"github.com/go-ping/ping"
 )
 
-func RunServer() {
-	cmd := exec.Command("go", "run", "backend/server/main.go")
+// func RunServer() {
+// 	cmd := exec.Command("go", "run", "backend/server/main.go")
 
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
+// 	cmd.Stdout = os.Stdout
+// 	cmd.Stderr = os.Stderr
 
-	// Pake Start() biar gk ngehalangin kode lain
-	// Waktu pake Run() langsung ke disable guinya wokwokwowk
-	err := cmd.Start()
-	if err != nil {
-		fmt.Println("Error starting server: ", err)
-		return
-	}
+// 	// Pake Start() biar gk ngehalangin kode lain
+// 	// Waktu pake Run() langsung ke disable guinya wokwokwowk
+// 	err := cmd.Start()
+// 	if err != nil {
+// 		fmt.Println("Error starting server: ", err)
+// 		return
+// 	}
 
-	fmt.Println("Server started")
-}
+// 	fmt.Println("Server started")
+// }
 
 func GetServerIP() (string, error) {
 	interfaces, err := net.Interfaces()
@@ -151,6 +152,21 @@ func GetAllClients(serverIP string) []object.Computer {
 	return clients
 }
 
+
+func SendKeyboardMessageToClients(keyboard *Keyboard, clientAddresses map[string]*net.UDPAddr, connection *net.UDPConn) {
+	messageBytes, err := json.Marshal(keyboard)
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+
+	for _, clientAddress := range clientAddresses {
+		_, err := connection.WriteToUDP(messageBytes, clientAddress)
+		if err != nil {
+			fmt.Println(err.Error())
+		}
+	}
+}
 func SendMouseMessageToClients(mouse *Mouse, clientAddresses map[string]*net.UDPAddr, connection *net.UDPConn) {
 	// Convert mouse struck ke bentuk json
 	messageBytes, err := json.Marshal(mouse)
@@ -168,22 +184,6 @@ func SendMouseMessageToClients(mouse *Mouse, clientAddresses map[string]*net.UDP
 		}
 	}
 }
-
-func SendKeyboardMessageToClients(keyboard *Keyboard, clientAddresses map[string]*net.UDPAddr, connection *net.UDPConn) {
-	messageBytes, err := json.Marshal(keyboard)
-	if err != nil {
-		fmt.Println(err)
-		return
-	}
-
-	for _, clientAddress := range clientAddresses {
-		_, err := connection.WriteToUDP(messageBytes, clientAddress)
-		if err != nil {
-			fmt.Println(err.Error())
-		}
-	}
-}
-
 func StartServer(serverIP string, serverPort int) (*net.UDPConn, *net.UDPAddr, error) {
 	address := net.UDPAddr{
 		IP:   net.ParseIP(serverIP),
@@ -203,7 +203,10 @@ func RegisterClient(clientAddress *net.UDPAddr, clientAddresses map[string]*net.
 	if _, exists := clientAddresses[clientKey]; !exists {
 		fmt.Printf("New client registered: %s\n", clientKey)
 		clientAddresses[clientKey] = clientAddress
+	} else {
+		fmt.Printf("Client %s already registered\n", clientKey)
 	}
+	fmt.Printf("Total registered clients: %d\n", len(clientAddresses))
 }
 
 func AcknowledgeClient(connection *net.UDPConn, clientAddress *net.UDPAddr) {

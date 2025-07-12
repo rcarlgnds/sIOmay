@@ -1,18 +1,20 @@
 package pages
 
 import (
+	"sIOmay/controller"
+	helper "sIOmay/helpers"
+	"time"
+
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/widget"
-	helper "sIOmay/helpers"
-	"time"
 )
 
 func AutoControlPanel(window fyne.Window) fyne.CanvasObject {
 	serverIP, _ := helper.GetServerIP()
 	var selectedComputer []string
 
-	connectButton := helper.InitConnectButton(&selectedComputer)
+	connectButton := controller.InitConnectButton(&selectedComputer)
 	//connectButton.OnTapped = func() {
 	//	window.SetContent(MinimizedAutoControlPanel(window))
 	//}
