@@ -36,14 +36,9 @@ func (mouse *Mouse) ListenForMouseEvents() {
 	go func() {
 		evChan := hook.Start()
 		defer hook.End()
-
 		for ev := range evChan {
 			mouse.Mu.Lock()
-
-			// Update previous state
 			mouse.Last = mouse.Current
-
-			// Update current state
 			mouse.Current = Coordinates{X: int(ev.X), Y: int(ev.Y)}
 			mouse.Button = int(ev.Button)
 			mouse.Clicks = int(ev.Clicks)
@@ -54,17 +49,12 @@ func (mouse *Mouse) ListenForMouseEvents() {
 					mouse.Dragging = true
 					mouse.DragStart = Coordinates{X: int(ev.X), Y: int(ev.Y)}
 				}
-				// Continuously update DragEnd as the mouse moves
 				mouse.DragEnd = Coordinates{X: int(ev.X), Y: int(ev.Y)}
-
 			case hook.MouseUp:
-				// End dragging when the mouse button is released
 				if mouse.Dragging {
 					mouse.Dragging = false
 				}
 			}
-
-			// Update mouse wheel state if applicable
 			if ev.Kind == hook.MouseWheel {
 				mouse.Wheel = &MouseWheel{
 					Event:     determineWheelEvent(int(ev.Rotation)),

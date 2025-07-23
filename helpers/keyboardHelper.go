@@ -24,14 +24,10 @@ func NewKeyboardEvent() *Keyboard {
 
 func (k *Keyboard) ListenForGlobalKeyboardEvents(events chan<- *Keyboard) error {
 	fmt.Println("Starting global keyboard listener...")
-
-	// Start listening for global events
 	go func() {
 		for ev := range hook.Start() {
-			// Process only keyboard events
 			if ev.Kind == hook.KeyDown || ev.Kind == hook.KeyUp {
 				isPressed := ev.Kind == hook.KeyDown
-
 				k.Mu.Lock()
 				switch ev.Rawcode {
 				case 42, 54:
@@ -46,10 +42,8 @@ func (k *Keyboard) ListenForGlobalKeyboardEvents(events chan<- *Keyboard) error 
 						k.Char = "Unknown"
 					}
 					k.Key = strconv.Itoa(int(ev.Rawcode))
-					//k.Key = fmt.Sprintf("%c", rune(ev.Keycode))
 				}
 				k.Mu.Unlock()
-
 				events <- &Keyboard{
 					Char:  k.Char,
 					Key:   k.Key,
@@ -65,13 +59,11 @@ func (k *Keyboard) ListenForGlobalKeyboardEvents(events chan<- *Keyboard) error 
 }
 
 func (k *Keyboard) ListenForKeyboardEvents(events chan<- *Keyboard) {
-	// Open the keyboard for capturing key events
 	err := keyboard.Open()
 	if err != nil {
 		fmt.Println("Error opening keyboard events: ", err)
 		return
 	}
-
 	defer func() {
 		keyboard.Close()
 		fmt.Println("Keyboard closed.")

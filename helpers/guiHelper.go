@@ -76,16 +76,12 @@ func InitManualRightPanel(
 	toInputField := widget.NewEntry()
 	toInputField.SetPlaceHolder("141")
 
-	// This is the button that will trigger the scan.
-	scanButton := widget.NewButton("Scan IP Range", nil) // Logic will be added in the pages package
+	scanButton := widget.NewButton("Scan IP Range", nil) 
 	scanButton.Importance = widget.HighImportance
 
 	refreshButton := widget.NewButton("Refresh Page", func() {
 		refreshCallback()
 	})
-
-	// Note: We removed SelectAll and the main Connect button from here
-	// as they don't make sense until after a manual scan is complete.
 	rightPanel := container.NewVBox(
 		header,
 		layout.NewSpacer(),
@@ -99,7 +95,6 @@ func InitManualRightPanel(
 		scanButton,
 		refreshButton,
 	)
-
 	return rightPanel, networkAddressInputField, fromInputField, toInputField, scanButton
 }
 
@@ -317,9 +312,3 @@ func UpdateComputerList(serverIP string, selectedComputer *[]string, connectButt
 	}
 	return computerBoxes, container.NewGridWithColumns(5, computerBoxes...)
 }
-
-// Dummy RunServer function to avoid compile errors
-// func RunServer() {
-// 	log.Println("Server starting...")
-// 	// We will implement the actual server logic here later
-// }

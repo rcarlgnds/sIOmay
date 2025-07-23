@@ -4,11 +4,8 @@ import (
 	"fmt"
 	"net"
 	"os"
-	"path/filepath"
-
-	// "os"
 	"os/exec"
-	// "path/filepath"
+	"path/filepath"
 	helper "sIOmay/helpers"
 	"sync"
 	"time"
@@ -24,7 +21,7 @@ var psexecBytes []byte
 const (
 	ServerPort    = 8080
 	SleepDuration = 10 * time.Millisecond
-	BufferSize    = 1024
+	BufferSize    = 256
 )
 func InitConnectButton(selectedComputer *[]string) *widget.Button {
 	return widget.NewButton("Connect", func() {
@@ -36,8 +33,8 @@ func InitConnectButton(selectedComputer *[]string) *widget.Button {
 		}
 	})
 }
-
 func RunServer(allowedIPs []string) {
+
 	serverIP, err := helper.GetServerIP()
 	if err != nil {
 		fmt.Println("Error getting server IP:", err)
@@ -46,7 +43,11 @@ func RunServer(allowedIPs []string) {
 	if !IsPortAvailable(serverIP, 8080) {
 		fmt.Println("Error: Port 8080 is still in use. Please wait a moment and try again.")
 	}
-	startControl(allowedIPs)
+
+	go func() {
+		startControl(allowedIPs)
+	}()
+
 }
 func IsPortAvailable(ip string, port int) bool {
 	address := fmt.Sprintf("%s:%d", ip, port)
@@ -61,9 +62,8 @@ func startControl(allowedIPs []string) {
 	serverIP, err := helper.GetServerIP()
 	if err != nil {
 		panic(err)
-	}	
-	
-	for _, remoteMachine := range allowedIPs {
+	}
+	for _, remoteMachine := range allowedIPs { // jangan dibuka 
 		username := "" // username admin
 		password := "" //password admin
 	
@@ -74,7 +74,6 @@ func startControl(allowedIPs []string) {
 			fmt.Printf("PsExec started on %s with IP %s\n", remoteMachine, serverIP)
 		}
 	}
-
 	
 	connection, _, err := helper.StartServer(serverIP, ServerPort)
 	if err != nil {
@@ -92,81 +91,27 @@ func startControl(allowedIPs []string) {
 		}
 		clientAddresses[ip] = addr
 	}
-
-
-	// Create synchronization objects
-	//var keyboardMu sync.Mutex
 	var mouseMu sync.Mutex
-	//var mouseDataChanged bool
-	//var keyboardDataChanged bool
-
-	// Create mouse event object
 	mouseData := helper.NewMouse()
 	mouseData.ListenForMouseEvents()
-
-	// Keyboard event handling
-	//events := make(chan *helper.Keyboard)
-	//go func() {
-	//	keyboardData := helper.NewKeyboardEvent()
-	//	err := keyboardData.ListenForGlobalKeyboardEvents(events)
-	//	if err != nil {
-	//		fmt.Println("Error listening for keyboard events:", err)
-	//	}
-	//}()
-
-	// Main processing goroutine
 	go func() {
-		//var keyboardData *helper.Keyboard
-
-		// Goroutine to update keyboardData from events
-		//go func() {
-		//	for event := range events {
-		//		keyboardMu.Lock()
-		//		keyboardData = event
-		//		keyboardDataChanged = true
-		//		keyboardMu.Unlock()
-		//	}
-		//}()
-
-		// Goroutine to update mouseData when mouse events are detected
 		go func() {
 			for {
 				mouseMu.Lock()
 				if mouseData.HasMouseChanged() {
-					//mouseDataChanged = true
 				}
 				mouseMu.Unlock()
 				time.Sleep(SleepDuration)
 			}
 		}()
-
-		// Mouse Send
 		for {
 			mouseData.Mu.Lock()
 			fmt.Printf("Mouse Data: %+v\n", mouseData)
-			//if mouseDataChanged {
-			//	fmt.Printf("Mouse Data: %+v\n", mouseData)
-			//	mouseDataChanged = false
 			helper.SendMouseMessageToClients(mouseData, clientAddresses, connection)
-			//}
 			mouseData.Mu.Unlock()
 			time.Sleep(SleepDuration)
 		}
-
-		//for {
-		//	keyboardMu.Lock()
-		//	if keyboardDataChanged {
-		//		fmt.Printf("Keyboard Data: %+v\n", keyboardData)
-		//		mouseDataChanged = false
-		//		helper.SendKeyboardMessageToClients(keyboardData, clientAddresses, connection)
-		//	}
-		//	keyboardData.Mu.Unlock()
-		//	time.Sleep(SleepDuration)
-		//}
-
 	}()
-
-	// Handle UDP communication
 	buffer := make([]byte, BufferSize)
 	for {
 		_, clientAddress, err := connection.ReadFromUDP(buffer)
@@ -174,31 +119,23 @@ func startControl(allowedIPs []string) {
 			fmt.Println("Error reading from UDP:", err)
 			continue
 		}
-
 		helper.RegisterClient(clientAddress, clientAddresses)
 		helper.AcknowledgeClient(connection, clientAddress)
 	}
 }
 
-
-
 func RunClientWithPsExec(serverIP, remoteMachine, username, password string) error {
-	psexecDir := "C:\\Tools"
-	psexecPath := filepath.Join(psexecDir, "PsExec.exe")
-
-	if err := os.MkdirAll(psexecDir, 0755); err != nil {
-		return fmt.Errorf("failed to create directory %s: %w", psexecDir, err)
-	}
-
-	if _, err := os.Stat(psexecPath); os.IsNotExist(err) {
-		err := os.WriteFile(psexecPath, psexecBytes, 0755)
+	tmpDir := os.TempDir()
+	psExecPath := filepath.Join(tmpDir, "PsExec.exe")
+	if _, err := os.Stat(psExecPath); os.IsNotExist(err) {
+		err := os.WriteFile(psExecPath, psexecBytes, 0755)
 		if err != nil {
-			return fmt.Errorf("failed to write PsExec.exe: %w", err)
+			return fmt.Errorf("failed to write PsExec: %w", err)
 		}
 	}
 	clientPath := "C:\\Program Files\\client\\client.exe"
 	cmd := exec.Command(
-		psexecPath,
+		psExecPath,
 		"-accepteula",
 		"-i", "1",
 		"-u", username,
@@ -207,7 +144,6 @@ func RunClientWithPsExec(serverIP, remoteMachine, username, password string) err
 		clientPath,
 		"-from", fmt.Sprintf("%s:%d", serverIP, ServerPort),
 	)
-
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	fmt.Println("Running PsExec:", cmd.String())

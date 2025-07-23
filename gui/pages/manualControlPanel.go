@@ -22,31 +22,26 @@ func ManualControlPanel(window fyne.Window) fyne.CanvasObject {
 	var selectedComputer []string
 	var computerBoxes []fyne.CanvasObject
 
+
 	leftContent := container.NewCenter(widget.NewLabel("Enter an IP range and click Scan..."))
 	leftScroll := container.NewScroll(leftContent)
-
-	connectButton := widget.NewButton("Connect", func() {
-		if len(selectedComputer) == 0 {
-			log.Println("No computers selected.")
-			return
-		}
-		if runningServerCmd != nil && runningServerCmd.Process != nil {
-			fmt.Println("Stopping existing server process with PID:", runningServerCmd.Process.Pid)
-			// 2. Kill the old process to free up the port.
-			err := runningServerCmd.Process.Kill()
-			if err != nil {
-				log.Println("Failed to kill previous server process:", err)
-				// We can continue anyway, as the new process might still work
+	isConnected := false 
+	var connectButton *widget.Button
+	connectButton = widget.NewButton("Connect", func() {
+		if !isConnected {
+			if len(selectedComputer) == 0 {
+				log.Println("No computers selected.")
+				return
 			}
+			fmt.Printf("Connecting to %v\n", selectedComputer)
+			controller.RunServer(selectedComputer)
+			isConnected = true
+			connectButton.SetText("Disconnect")
+		} else {
+			// Disconnect logic
 		}
-
-		// 3. Start the new server process and store its command object.
-		fmt.Printf("Connecting to %v\n", selectedComputer)
-		controller.RunServer(selectedComputer)
 	})
-	connectButton.Disable() // Start with the button disabled.
 
-	// --- Navigation and Right Panel Setup ---
 	backButton := func() {
 		window.SetContent(Opening(window))
 	}
@@ -56,7 +51,6 @@ func ManualControlPanel(window fyne.Window) fyne.CanvasObject {
 
 	rightPart, networkAddressInput, fromInput, toInput, scanButton := helpers.InitManualRightPanel(window, serverIP, backButton, refreshButton)
 
-	// --- Scan Button Logic (Your code, which is correct) ---
 	scanButton.OnTapped = func() {
 		prefix := networkAddressInput.Text
 		fromStr := fromInput.Text
@@ -83,22 +77,20 @@ func ManualControlPanel(window fyne.Window) fyne.CanvasObject {
 			computerList = append(computerList, computer)
 		}
 
-		// Generate the button grid. This function pings each computer.
 		newGrid, newBoxes := helpers.GenerateComputerGrid(computerList, serverIP, &selectedComputer, connectButton)
 
 		leftScroll.Content = newGrid
 		leftScroll.Refresh()
-		computerBoxes = newBoxes // Store buttons for the "Select All" logic
+		computerBoxes = newBoxes 
 	}
 
-	// --- Final Layout Assembly ---
 	selectAllCheckbox := widget.NewCheck("Select All", func(checked bool) {
 		helpers.HandleSelectAll(checked, &selectedComputer, computerBoxes, connectButton)
 	})
 
 	rightPart.Add(widget.NewSeparator())
 	rightPart.Add(selectAllCheckbox)
-	rightPart.Add(connectButton) // Add the connect button we created
+	rightPart.Add(connectButton) 
 
 	controlPanelPage := container.NewHSplit(leftScroll, rightPart)
 	controlPanelPage.SetOffset(0.6)

@@ -168,14 +168,12 @@ func SendKeyboardMessageToClients(keyboard *Keyboard, clientAddresses map[string
 	}
 }
 func SendMouseMessageToClients(mouse *Mouse, clientAddresses map[string]*net.UDPAddr, connection *net.UDPConn) {
-	// Convert mouse struck ke bentuk json
 	messageBytes, err := json.Marshal(mouse)
 	if err != nil {
 		fmt.Println(err)
 		return
 	}
 
-	// Send Message JSON ke semua host
 	for _, clientAddress := range clientAddresses {
 		_, err := connection.WriteToUDP(messageBytes, clientAddress)
 		if err != nil {
@@ -198,7 +196,6 @@ func StartServer(serverIP string, serverPort int) (*net.UDPConn, *net.UDPAddr, e
 }
 
 func RegisterClient(clientAddress *net.UDPAddr, clientAddresses map[string]*net.UDPAddr) {
-	// Register client yang belum ke register
 	clientKey := clientAddress.String()
 	if _, exists := clientAddresses[clientKey]; !exists {
 		fmt.Printf("New client registered: %s\n", clientKey)
