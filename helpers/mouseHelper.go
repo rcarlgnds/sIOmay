@@ -33,6 +33,10 @@ func NewMouse() *Mouse {
 }
 
 func (mouse *Mouse) ListenForMouseEvents() {
+	mouse.ListenForMouseEventsWithCallback(nil)
+}
+
+func (mouse *Mouse) ListenForMouseEventsWithCallback(callback func()) {
 	go func() {
 		evChan := hook.Start()
 		defer hook.End()
@@ -66,6 +70,11 @@ func (mouse *Mouse) ListenForMouseEvents() {
 				mouse.Wheel = nil
 			}
 			mouse.Mu.Unlock()
+			
+			// Call callback if provided
+			if callback != nil {
+				callback()
+			}
 		}
 	}()
 }

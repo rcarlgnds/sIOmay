@@ -25,22 +25,9 @@ func ManualControlPanel(window fyne.Window) fyne.CanvasObject {
 
 	leftContent := container.NewCenter(widget.NewLabel("Enter an IP range and click Scan..."))
 	leftScroll := container.NewScroll(leftContent)
-	isConnected := false 
-	var connectButton *widget.Button
-	connectButton = widget.NewButton("Connect", func() {
-		if !isConnected {
-			if len(selectedComputer) == 0 {
-				log.Println("No computers selected.")
-				return
-			}
-			fmt.Printf("Connecting to %v\n", selectedComputer)
-			controller.RunServer(selectedComputer)
-			isConnected = true
-			connectButton.SetText("Disconnect")
-		} else {
-			// Disconnect logic
-		}
-	})
+	
+	// Use the proper connect button with disconnect functionality
+	connectButton := controller.InitConnectButton(&selectedComputer)
 
 	backButton := func() {
 		window.SetContent(Opening(window))
