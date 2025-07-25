@@ -7,6 +7,7 @@ require (
 	github.com/eiannone/keyboard v0.0.0-20220611211555-0d226195f203
 	github.com/go-ping/ping v1.2.0
 	github.com/go-vgo/robotgo v0.110.8
+	github.com/joho/godotenv v1.5.1
 	github.com/robotn/gohook v0.41.0
 )
 

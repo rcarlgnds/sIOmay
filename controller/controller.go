@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"fyne.io/fyne/v2/widget"
+	"github.com/joho/godotenv"
 
 	_ "embed"
 )
@@ -19,7 +20,29 @@ import (
 //go:embed assets/PsExec.exe
 var psexecBytes []byte
 
-// Helper function to check if error is due to connection being closed
+
+func LoadCredentials() (username, password string, err error) {
+	
+	err = godotenv.Load()
+	if err != nil {
+		
+		err = godotenv.Load("../.env")
+		if err != nil {
+			return "", "", fmt.Errorf("error loading .env file: %w", err)
+		}
+	}
+	
+	username = os.Getenv("PSEXEC_USERNAME")
+	password = os.Getenv("PSEXEC_PASSWORD")
+	
+	if username == "" || password == "" {
+		return "", "", fmt.Errorf("PSEXEC_USERNAME and PSEXEC_PASSWORD must be set in .env file")
+	}
+	
+	return username, password, nil
+}
+
+
 func isConnectionClosedError(err error) bool {
 	if err == nil {
 		return false
@@ -32,11 +55,11 @@ func isConnectionClosedError(err error) bool {
 
 const (
 	ServerPort    = 8080
-	SleepDuration = 1 * time.Millisecond  // Much faster updates - 1000fps instead of 100fps
-	BufferSize    = 1024  // Increased buffer size
+	SleepDuration = 1 * time.Millisecond  
+	BufferSize    = 1024  
 )
 
-// Global variables to track connection state
+
 var (
 	isConnected      = false
 	currentClients   []string
@@ -52,7 +75,7 @@ func InitConnectButton(selectedComputer *[]string) *widget.Button {
 		defer connectionMutex.Unlock()
 		
 		if !isConnected {
-			// Connect
+			
 			fmt.Printf("Connecting to %v\n", *selectedComputer)
 			if len(*selectedComputer) > 0 {
 				currentClients = make([]string, len(*selectedComputer))
@@ -62,20 +85,20 @@ func InitConnectButton(selectedComputer *[]string) *widget.Button {
 				go RunServer(*selectedComputer)
 				isConnected = true
 				button.SetText("Disconnect")
-				button.Refresh() // Force refresh the button
+				button.Refresh() 
 				fmt.Println("Button changed to Disconnect")
 			} else {
 				fmt.Println("No computers selected.")
 			}
 		} else {
-			// Disconnect
+			
 			fmt.Println("Disconnect button clicked - starting disconnection...")
 			button.SetText("Disconnecting...")
-			button.Refresh() // Show intermediate state
+			button.Refresh() 
 			
 			go func() {
 				DisconnectFromClients()
-				// Update button back to Connect state
+				
 				connectionMutex.Lock()
 				isConnected = false
 				connectionMutex.Unlock()
@@ -93,7 +116,7 @@ func InitConnectButton(selectedComputer *[]string) *widget.Button {
 func DisconnectFromClients() {
 	fmt.Println("Starting disconnection process...")
 	
-	// Send disconnect message to all clients first
+	
 	if serverConnection != nil {
 		fmt.Println("Sending disconnect messages to clients...")
 		disconnectMsg := []byte("DISCONNECT")
@@ -110,14 +133,14 @@ func DisconnectFromClients() {
 				fmt.Printf("Error resolving address for %s: %v\n", remoteMachine, err)
 			}
 		}
-		// Give clients time to process disconnect message
+		
 		fmt.Println("Waiting for clients to process disconnect...")
 		time.Sleep(1 * time.Second)
 	} else {
 		fmt.Println("No server connection found")
 	}
 	
-	// Signal server to stop
+	
 	if stopServerChan != nil {
 		fmt.Println("Signaling server to stop...")
 		select {
@@ -130,7 +153,7 @@ func DisconnectFromClients() {
 		fmt.Println("No stop channel found")
 	}
 	
-	// Close server connection
+	
 	if serverConnection != nil {
 		fmt.Println("Closing server connection...")
 		serverConnection.Close()
@@ -138,7 +161,7 @@ func DisconnectFromClients() {
 		fmt.Println("Server connection closed")
 	}
 	
-	// Kill client processes on remote machines (backup method)
+	
 	fmt.Println("Killing client processes on remote machines...")
 	for _, remoteMachine := range currentClients {
 		fmt.Printf("Attempting to kill client on %s...\n", remoteMachine)
@@ -158,12 +181,15 @@ func KillClientOnRemoteMachine(remoteMachine string) error {
 	tmpDir := os.TempDir()
 	psExecPath := filepath.Join(tmpDir, "PsExec.exe")
 	
-	username := "" // Same credentials as connection
-	password := ""
+	
+	username, password, err := LoadCredentials()
+	if err != nil {
+		return fmt.Errorf("error loading credentials: %w", err)
+	}
 	
 	fmt.Printf("Attempting to kill client.exe on %s...\n", remoteMachine)
 	
-	// Kill client.exe process on remote machine
+	
 	cmd := exec.Command(
 		psExecPath,
 		"-accepteula",
@@ -173,14 +199,14 @@ func KillClientOnRemoteMachine(remoteMachine string) error {
 		"taskkill", "/f", "/im", "client.exe",
 	)
 	
-	// Capture output for debugging
+	
 	output, err := cmd.CombinedOutput()
 	fmt.Printf("PsExec kill output for %s: %s\n", remoteMachine, string(output))
 	
 	if err != nil {
 		fmt.Printf("PsExec kill error for %s: %v\n", remoteMachine, err)
 		
-		// Try alternative method - direct taskkill without PsExec
+		
 		fmt.Printf("Trying alternative kill method for %s...\n", remoteMachine)
 		altCmd := exec.Command("taskkill", "/s", remoteMachine, "/u", username, "/p", password, "/f", "/im", "client.exe")
 		altOutput, altErr := altCmd.CombinedOutput()
@@ -225,11 +251,16 @@ func startControl(allowedIPs []string) {
 		panic(err)
 	}
 	
-	// Start clients on remote machines
-	for _, remoteMachine := range allowedIPs {
-		username := "" // username admin
-		password := "" //password admin
 	
+	username, password, err := LoadCredentials()
+	if err != nil {
+		fmt.Printf("Error loading credentials: %v\n", err)
+		fmt.Println("Please create a .env file with PSEXEC_USERNAME and PSEXEC_PASSWORD")
+		return
+	}
+	
+	
+	for _, remoteMachine := range allowedIPs {
 		err := RunClientWithPsExec(serverIP, remoteMachine, username, password)
 		if err != nil {
 			fmt.Printf("Failed to run PsExec on %s: %v\n", remoteMachine, err)
@@ -238,14 +269,14 @@ func startControl(allowedIPs []string) {
 		}
 	}
 	
-	// Start UDP server
+	
 	connection, _, err := helper.StartServer(serverIP, ServerPort)
 	if err != nil {
 		fmt.Println("Error starting server:", err)
 		return
 	}
 	
-	// Store connection globally for cleanup
+	
 	connectionMutex.Lock()
 	serverConnection = connection
 	connectionMutex.Unlock()
@@ -271,18 +302,18 @@ func startControl(allowedIPs []string) {
 	
 	mouseData := helper.NewMouse()
 	
-	// Create a channel to signal when to send mouse data
-	sendChan := make(chan bool, 100) // Bigger buffer
 	
-	// Start listening for mouse events and signal when to send
+	sendChan := make(chan bool, 100) 
+	
+	
 	mouseData.ListenForMouseEventsWithCallback(func() {
 		select {
 		case sendChan <- true:
-		default: // Channel full, skip this signal
+		default: 
 		}
 	})
 	
-	// Mouse data sender goroutine
+	
 	go func() {
 		for {
 			select {
@@ -297,7 +328,7 @@ func startControl(allowedIPs []string) {
 		}
 	}()
 	
-	// Main server loop
+	
 	buffer := make([]byte, BufferSize)
 	for {
 		select {
@@ -305,16 +336,16 @@ func startControl(allowedIPs []string) {
 			fmt.Println("Stopping server...")
 			return
 		default:
-			// Set a timeout for ReadFromUDP so we can check for stop signal
+			
 			connection.SetReadDeadline(time.Now().Add(100 * time.Millisecond))
 			
 			_, clientAddress, err := connection.ReadFromUDP(buffer)
 			if err != nil {
-				// Check if it's a timeout
+				
 				if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
-					continue // Just a timeout, check for stop signal again
+					continue 
 				}
-				// Check if it's a "connection closed" error (normal during disconnect)
+				
 				if isConnectionClosedError(err) {
 					fmt.Println("Server connection closed - stopping UDP read loop")
 					return
