@@ -15,6 +15,14 @@ import (
 	"github.com/go-ping/ping"
 )
 
+// Statistics for byte transmission tracking
+var (
+	totalBytesSent int64
+	totalPacketsSent int64
+	statisticsMutex sync.Mutex
+	verboseByteLogging bool = true // Set to false to reduce console spam
+)
+
 // func RunServer() {
 // 	cmd := exec.Command("go", "run", "backend/server/main.go")
 
@@ -118,14 +126,12 @@ func GetAllClients(serverIP string) []object.Computer {
 	results := make(chan object.Computer, 255)
 	statusChan := make(chan string, 255) // Channel untuk cetak status ping
 
-	// Memulai goroutine untuk mencetak status secara real-time
 	go func() {
 		for status := range statusChan {
 			fmt.Println(status)
 		}
 	}()
 
-	// Ping
 	for i := 1; i <= 254; i++ {
 		clientIP := fmt.Sprintf("%s.%d", networkPrefix, i)
 
@@ -139,12 +145,10 @@ func GetAllClients(serverIP string) []object.Computer {
 		close(statusChan)
 	}()
 
-	// Result
 	for client := range results {
 		clients = append(clients, client)
 	}
 
-	// Sorting berdasarkan IP
 	sort.Slice(clients, func(i, j int) bool {
 		return ipToInt(clients[i].IPAddress) < ipToInt(clients[j].IPAddress)
 	})
@@ -167,18 +171,119 @@ func SendKeyboardMessageToClients(keyboard *Keyboard, clientAddresses map[string
 		}
 	}
 }
+// SendMouseMessageToClients sends mouse events as compact byte data instead of JSON
+// Previous: JSON mouse data was ~200+ bytes per event
+// Current: Binary mouse data is exactly 7 bytes per event
+// This represents a ~95% reduction in network traffic
 func SendMouseMessageToClients(mouse *Mouse, clientAddresses map[string]*net.UDPAddr, connection *net.UDPConn) {
-	messageBytes, err := json.Marshal(mouse)
-	if err != nil {
-		fmt.Println(err)
+	// Check if there's new byte data to send
+	if !mouse.HasNewByteData() {
+		return // No new data to send
+	}
+	
+	// Get the byte data (7 bytes)
+	byteData := mouse.GetByteData()
+	if byteData == nil {
 		return
 	}
 
-	for _, clientAddress := range clientAddresses {
-		_, err := connection.WriteToUDP(messageBytes, clientAddress)
-		if err != nil {
+	// Print byte information if verbose logging is enabled
+	if verboseByteLogging {
+		printDetailedByteInfo(byteData)
+	}
 
-			fmt.Println(err.Error())
+	// Send to all clients and collect statistics
+	clientCount := sendBytesToClients(byteData, clientAddresses, connection)
+	updateAndPrintStatistics(byteData, clientCount, len(clientAddresses))
+	
+	// Clear the byte data after sending
+	mouse.ClearByteData()
+}
+
+func printDetailedByteInfo(byteData []byte) {
+	fmt.Printf("=== SENDING MOUSE DATA ===\n")
+	fmt.Printf("Raw bytes: %v\n", byteData)
+	fmt.Printf("Hex representation: %02X\n", byteData)
+	fmt.Printf("Binary representation: ")
+	for i, b := range byteData {
+		fmt.Printf("[%d]=%08b ", i, b)
+	}
+	fmt.Println()
+	
+	if len(byteData) >= 7 {
+		printDecodedByteData(byteData)
+	}
+}
+
+func printDecodedByteData(byteData []byte) {
+	opcode := byteData[0]
+	specialKey := byteData[1]
+	x := int16(byteData[2])<<8 | int16(byteData[3])
+	y := int16(byteData[4])<<8 | int16(byteData[5])
+	
+	fmt.Printf("Decoded data:\n")
+	fmt.Printf("  Opcode: 0x%02X (%08b)\n", opcode, opcode)
+	fmt.Printf("  Special Key: 0x%02X\n", specialKey)
+	fmt.Printf("  X coordinate: %d\n", x)
+	fmt.Printf("  Y coordinate: %d\n", y)
+	
+	printOperationDetails(opcode, x, y)
+}
+
+func printOperationDetails(opcode byte, x, y int16) {
+	fmt.Printf("  Operations detected:\n")
+	if opcode&0x08 != 0 { // MouseClickLeft = 0b00001000
+		fmt.Printf("    - Left Click\n")
+	}
+	if opcode&0x04 != 0 { // MouseClickRight = 0b00000100
+		fmt.Printf("    - Right Click\n")
+	}
+	if opcode&0x01 != 0 { // MouseMiddleClick = 0b00000001
+		fmt.Printf("    - Middle Click\n")
+	}
+	if opcode&0x10 != 0 { // MouseMove = 0b00010000
+		fmt.Printf("    - Mouse Move to (%d, %d)\n", x, y)
+	}
+	if opcode&0x02 != 0 { // MouseScroll = 0b00000010
+		fmt.Printf("    - Mouse Scroll (rotation: %d)\n", x) // x contains rotation for scroll
+	}
+}
+
+func sendBytesToClients(byteData []byte, clientAddresses map[string]*net.UDPAddr, connection *net.UDPConn) int {
+	clientCount := 0
+	for clientIP, clientAddress := range clientAddresses {
+		_, err := connection.WriteToUDP(byteData, clientAddress)
+		if err != nil {
+			fmt.Printf("❌ Error sending to client %s (%s): %v\n", clientIP, clientAddress, err)
+		} else {
+			clientCount++
+			if verboseByteLogging {
+				fmt.Printf("✅ Sent %d bytes to client %s (%s)\n", len(byteData), clientIP, clientAddress)
+			}
+		}
+	}
+	return clientCount
+}
+
+func updateAndPrintStatistics(byteData []byte, clientCount, totalClients int) {
+	bytesThisPacket := int64(len(byteData))
+	
+	// Update statistics
+	statisticsMutex.Lock()
+	totalBytesSent += bytesThisPacket * int64(clientCount)
+	totalPacketsSent++
+	currentTotalBytes := totalBytesSent
+	currentTotalPackets := totalPacketsSent
+	statisticsMutex.Unlock()
+	
+	if verboseByteLogging {
+		fmt.Printf("Total clients sent to: %d/%d\n", clientCount, totalClients)
+		fmt.Printf("📊 Session stats: %d packets sent, %d total bytes sent\n", currentTotalPackets, currentTotalBytes)
+		fmt.Printf("==========================\n\n")
+	} else {
+		// Show compact summary every 100 packets
+		if currentTotalPackets%100 == 0 {
+			fmt.Printf("📊 Sent packet #%d (%d bytes) to %d clients\n", currentTotalPackets, bytesThisPacket, clientCount)
 		}
 	}
 }
@@ -212,4 +317,42 @@ func AcknowledgeClient(connection *net.UDPConn, clientAddress *net.UDPAddr) {
 	if err != nil {
 		fmt.Println("Error when sending acknowledgment:", err)
 	}
+}
+
+func PrintByteTransmissionStats() {
+	statisticsMutex.Lock()
+	defer statisticsMutex.Unlock()
+	
+	fmt.Printf("\n📈 === BYTE TRANSMISSION STATS ===\n")
+	fmt.Printf("Total packets sent: %d\n", totalPacketsSent)
+	fmt.Printf("Total bytes sent: %d\n", totalBytesSent)
+	if totalPacketsSent > 0 {
+		fmt.Printf("Average bytes per packet: %.2f\n", float64(totalBytesSent)/float64(totalPacketsSent))
+	}
+	fmt.Printf("===================================\n\n")
+}
+
+// ResetByteTransmissionStats resets the transmission statistics
+func ResetByteTransmissionStats() {
+	statisticsMutex.Lock()
+	defer statisticsMutex.Unlock()
+	
+	totalBytesSent = 0
+	totalPacketsSent = 0
+	fmt.Println("📊 Byte transmission statistics reset")
+}
+
+// SetVerboseByteLogging enables or disables verbose byte logging
+func SetVerboseByteLogging(enabled bool) {
+	verboseByteLogging = enabled
+	if enabled {
+		fmt.Println("🔍 Verbose byte logging ENABLED - detailed byte information will be shown")
+	} else {
+		fmt.Println("🔇 Verbose byte logging DISABLED - showing summary every 100 packets")
+	}
+}
+
+// IsVerboseByteLogging returns the current verbose logging state
+func IsVerboseByteLogging() bool {
+	return verboseByteLogging
 }

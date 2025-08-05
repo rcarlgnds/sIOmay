@@ -301,26 +301,18 @@ func startControl(allowedIPs []string) {
 	}
 	
 	mouseData := helper.NewMouse()
-	
-	
 	sendChan := make(chan bool, 100) 
-	
-	
 	mouseData.ListenForMouseEventsWithCallback(func() {
 		select {
 		case sendChan <- true:
 		default: 
 		}
 	})
-	
-	
 	go func() {
 		for {
 			select {
 			case <-sendChan:
-				mouseData.Mu.Lock()
 				helper.SendMouseMessageToClients(mouseData, clientAddresses, connection)
-				mouseData.Mu.Unlock()
 			case <-stopServerChan:
 				fmt.Println("Stopping mouse data sender...")
 				return
