@@ -60,6 +60,13 @@ func (d *Bytedata) HasMouseClickRight() bool {
     return d.data[0]&byte(MouseClickRight) != 0
 }
 
+func (d *Bytedata) HasMouseMiddleClick() bool {
+    return d.data[0]&byte(MouseMiddleClick) != 0
+}
+
+func (d *Bytedata) HasMouseScroll() bool {
+    return d.data[0]&byte(MouseScroll) != 0
+}
 
 func (d *Bytedata) HasMouseMove() bool {
     return d.data[0]&byte(MouseMove) != 0
@@ -69,6 +76,10 @@ func (d *Bytedata) GetMousePosition() (x int16, y int16) {
     x = int16(d.data[2])<<8 | int16(d.data[3])
     y = int16(d.data[4])<<8 | int16(d.data[5])
     return
+}
+
+func (d *Bytedata) GetScrollRotation() int16 {
+    return int16(d.data[2])<<8 | int16(d.data[3])
 }
 
 func (d *Bytedata) GetSpecialKey() byte {

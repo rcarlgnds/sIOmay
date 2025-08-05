@@ -171,10 +171,7 @@ func SendKeyboardMessageToClients(keyboard *Keyboard, clientAddresses map[string
 		}
 	}
 }
-// SendMouseMessageToClients sends mouse events as compact byte data instead of JSON
-// Previous: JSON mouse data was ~200+ bytes per event
-// Current: Binary mouse data is exactly 7 bytes per event
-// This represents a ~95% reduction in network traffic
+
 func SendMouseMessageToClients(mouse *Mouse, clientAddresses map[string]*net.UDPAddr, connection *net.UDPConn) {
 	// Check if there's new byte data to send
 	if !mouse.HasNewByteData() {
