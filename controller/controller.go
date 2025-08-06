@@ -56,7 +56,7 @@ func isConnectionClosedError(err error) bool {
 const (
 	ServerPort    = 8080
 	SleepDuration = 1 * time.Millisecond  
-	BufferSize    = 1024  
+	BufferSize    = 128  
 )
 
 
