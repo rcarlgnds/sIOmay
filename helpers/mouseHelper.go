@@ -56,9 +56,13 @@ func (mouse *Mouse) ListenForMouseEventsWithCallback(callback func()) {
 func (mouse *Mouse) processMouseEvent(ev hook.Event) {
 	mouse.Mu.Lock()
 	defer mouse.Mu.Unlock()
+	
 	mouse.updateMousePosition(ev)
+	
 	mouse.ByteData = core.NewBytedata()
+	
 	mouse.handleMouseEventType(ev)
+	
 	mouse.updateWheelData(ev)
 }
 
@@ -76,6 +80,7 @@ func (mouse *Mouse) handleMouseEventType(ev hook.Event) {
 		
 	case hook.MouseDown:
 		mouse.handleMouseClick(ev)
+		// Also include position for click events
 		mouse.ByteData.MouseMove(int16(ev.X), int16(ev.Y))
 		
 	case hook.MouseDrag:
@@ -84,10 +89,10 @@ func (mouse *Mouse) handleMouseEventType(ev hook.Event) {
 	case hook.MouseUp:
 		mouse.handleMouseUp(ev)
 		
-	// case hook.MouseWheel:
-	// 	mouse.ByteData.MouseScroll(int16(ev.Rotation))
-	// 	// Include position for scroll events
-	// 	mouse.ByteData.MouseMove(int16(ev.X), int16(ev.Y))
+	case hook.MouseWheel:
+		mouse.ByteData.MouseScroll(int16(ev.Rotation))
+		// Include position for scroll events
+		mouse.ByteData.MouseMove(int16(ev.X), int16(ev.Y))
 	}
 }
 
@@ -97,8 +102,8 @@ func (mouse *Mouse) handleMouseClick(ev hook.Event) {
 		mouse.ByteData.MouseClickLeft()
 	case 2: // Right button  
 		mouse.ByteData.MouseClickRight()
-	// case 3: // Middle button
-		// mouse.ByteData.MouseMiddleClick()
+	case 3: // Middle button
+		mouse.ByteData.MouseMiddleClick()
 	}
 }
 

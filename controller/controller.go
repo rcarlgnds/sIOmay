@@ -49,8 +49,8 @@ func isConnectionClosedError(err error) bool {
 	}
 	errStr := err.Error()
 	return strings.Contains(errStr, "use of closed network connection") ||
-		   strings.Contains(errStr, "connection reset") ||
-		   strings.Contains(errStr, "broken pipe")
+		strings.Contains(errStr, "connection reset") ||
+		strings.Contains(errStr, "broken pipe")
 }
 
 const (
@@ -61,6 +61,7 @@ const (
 
 
 var (
+	debug 			 string 
 	isConnected      = false
 	currentClients   []string
 	serverConnection *net.UDPConn
@@ -221,6 +222,7 @@ func KillClientOnRemoteMachine(remoteMachine string) error {
 	return nil
 }
 func RunServer(allowedIPs []string) {
+	debug = os.Getenv("DEBUG")
 	serverIP, err := helper.GetServerIP()
 	if err != nil {
 		fmt.Println("Error getting server IP:", err)
@@ -303,7 +305,8 @@ func startControl(allowedIPs []string) {
 	mouseData := helper.NewMouse()
 	sendChan := make(chan bool, 100) 
 	mouseData.ListenForMouseEventsWithCallback(func() {
-		select {
+		
+	select {
 		case sendChan <- true:
 		default: 
 		}
@@ -361,17 +364,28 @@ func RunClientWithPsExec(serverIP, remoteMachine, username, password string) err
 			return fmt.Errorf("failed to write PsExec: %w", err)
 		}
 	}
+	
 	clientPath := "C:\\Program Files\\client\\client.exe"
-	cmd := exec.Command(
+	
+	args := []string{
 		psExecPath,
 		"-accepteula",
 		"-i", "1",
+	}
+	
+	if debug != "true" {
+		args = append(args, "-d")
+	} 
+	
+	args = append(args, 
 		"-u", username,
 		"-p", password,
 		"\\\\"+remoteMachine,
 		clientPath,
 		"-from", fmt.Sprintf("%s:%d", serverIP, ServerPort),
 	)
+	
+	cmd := exec.Command(args[0], args[1:]...)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	return cmd.Start()

@@ -57,4 +57,14 @@ func TestMouseClickByteData(t *testing.T) {
 		t.Error("Expected right click to be detected")
 	}
 	
+	// Test scroll
+	byteData.Clear()
+	byteData.MouseScroll(-3)
+	if !byteData.HasMouseScroll() {
+		t.Error("Expected scroll to be detected")
+	}
+	rotation := byteData.GetScrollRotation()
+	if rotation != -3 {
+		t.Errorf("Expected rotation -3, got %d", rotation)
+	}
 }

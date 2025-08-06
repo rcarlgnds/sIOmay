@@ -50,6 +50,17 @@ func (d *Bytedata) MouseMove(x int16, y int16) {
     d.data[5] = byte(y & 0xFF)
 }
 
+func (d *Bytedata) MouseMiddleClick() {
+    d.data[0] |= byte(MouseMiddleClick)
+}
+
+func (d *Bytedata) MouseScroll(rotation int16) {
+    d.data[0] |= byte(MouseScroll)
+    
+    d.data[2] = byte(rotation >> 8)
+    d.data[3] = byte(rotation & 0xFF)
+}
+
 // ========== Decoding (Read) Methods ==========
 
 func (d *Bytedata) HasMouseClickLeft() bool {
