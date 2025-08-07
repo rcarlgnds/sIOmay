@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net"
 
+	"sIOmay/core"
 	"sIOmay/object"
 	"sort"
 	"strings"
@@ -195,6 +196,34 @@ func SendMouseMessageToClients(mouse *Mouse, clientAddresses map[string]*net.UDP
 	
 	mouse.ClearMovementAndScroll()
 }
+
+// SendBufferedMouseDataToClients sends pre-buffered mouse data to clients
+// This ensures no mouse events are lost due to timing issues
+func SendBufferedMouseDataToClients(bufferedData []byte, clientAddresses map[string]*net.UDPAddr, connection *net.UDPConn) {
+	if bufferedData == nil || len(bufferedData) != 7 {
+		return // Invalid data
+	}
+
+	// Debug: Print what we're sending from buffered data
+	byteData := core.NewBytedata()
+	for i := 0; i < 7; i++ {
+		byteData.Bytes()[i] = bufferedData[i]
+	}
+	fmt.Printf("BUFFERED SENDING - LeftClick: %t, RightClick: %t, MiddleClick: %t, Move: %t\n", 
+		byteData.HasMouseClickLeft(), 
+		byteData.HasMouseClickRight(), 
+		byteData.HasMouseMiddleClick(),
+		byteData.HasMouseMove())
+
+	// Send buffered byte data to all clients
+	for _, clientAddress := range clientAddresses {
+		_, err := connection.WriteToUDP(bufferedData, clientAddress)
+		if err != nil {
+			fmt.Printf("Error sending buffered data to %s: %v\n", clientAddress, err)
+		}
+	}
+}
+
 func StartServer(serverIP string, serverPort int) (*net.UDPConn, *net.UDPAddr, error) {
 	address := net.UDPAddr{
 		IP:   net.ParseIP(serverIP),

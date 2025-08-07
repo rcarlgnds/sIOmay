@@ -305,18 +305,26 @@ func startControl(allowedIPs []string) {
 	}
 	
 	mouseData := helper.NewMouse()
-	sendChan := make(chan bool, 100) 
+	// Buffer for actual mouse data instead of just signals
+	mouseDataChan := make(chan []byte, 200) 
 	mouseData.ListenForMouseEventsWithCallback(func() {
-	select {
-		case sendChan <- true:
-		default: 
+		// Get the actual byte data and send it to buffer
+		if byteData := mouseData.GetByteData(); byteData != nil {
+			select {
+			case mouseDataChan <- byteData:
+				// Successfully buffered the mouse data
+			default: 
+				// Buffer full - this should rarely happen with 200 buffer size
+				fmt.Println("Warning: Mouse data buffer full, dropping event")
+			}
 		}
 	})
 	go func() {
 		for {
 			select {
-			case <-sendChan:
-				helper.SendMouseMessageToClients(mouseData, clientAddresses, connection)
+			case bufferedData := <-mouseDataChan:
+				// Send the actual buffered data instead of fetching latest
+				helper.SendBufferedMouseDataToClients(bufferedData, clientAddresses, connection)
 			case <-stopServerChan:
 				fmt.Println("Stopping mouse data sender...")
 				return

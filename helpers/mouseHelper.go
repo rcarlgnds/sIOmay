@@ -127,14 +127,15 @@ func (mouse *Mouse) handleMouseUp(ev hook.Event) {
 	switch ev.Button {
 	case 1: // Left button released - clear left click flag
 		mouse.clearLeftClick()
+		// End dragging if it was a left button drag
+		if mouse.Dragging {
+			fmt.Println(">>> ENDING DRAG OPERATION <<<")
+			mouse.Dragging = false
+		}
 	case 2: // Right button released - clear right click flag
 		mouse.clearRightClick()  
 	case 3: // Middle button released - clear middle click flag
 		mouse.clearMiddleClick()
-	}
-	
-	if mouse.Dragging {
-		mouse.Dragging = false
 	}
 }
 

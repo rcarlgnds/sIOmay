@@ -34,16 +34,18 @@ func smoothMove(fromX, fromY, toX, toY int) {
 	dy := float64(toY - fromY)
 	distance := math.Sqrt(dx*dx + dy*dy)
 	
-	if distance < 5 {
+	if distance < 3 {
 		robotgo.Move(toX, toY)
 		return
 	}
 	
-	steps := int(math.Max(8, math.Min(30, distance/5)))
+	// Reduce steps for faster movement during bursts
+	steps := int(math.Max(4, math.Min(15, distance/8)))
 	
 	for i := 1; i <= steps; i++ {
 		progress := float64(i) / float64(steps)
 		
+		// Cubic easing for smooth movement
 		progress = 1 - math.Pow(1-progress, 3)
 		
 		currentX := fromX + int(dx*progress)
@@ -51,7 +53,7 @@ func smoothMove(fromX, fromY, toX, toY int) {
 		
 		robotgo.Move(currentX, currentY)
 		
-		time.Sleep(time.Microsecond * 1)
+		// No sleep for faster movement
 	}
 }
 
@@ -99,43 +101,77 @@ func startMouseControl(connection *net.UDPConn) {
 	var lastLeftClick, lastRightClick, lastMiddleClick bool
 	var lastMoveTime time.Time
 
-	fmt.Println("Starting byte-based mouse control with smooth interpolation...")
+	fmt.Println("Starting byte-based mouse control with multi-threaded processing...")
 	
-	for {
-		if !processMouseData(connection, &lastX, &lastY, &lastLeftClick, &lastRightClick, &lastMiddleClick, &lastMoveTime) {
-			break
-		}
-	}
+	// Create a smaller buffered channel to minimize latency while handling bursts
+	mouseDataBuffer := make(chan []byte, 50) // Reduced buffer size for lower latency
+	
+	// Start the dedicated receiving thread
+	go receiveMouseData(connection, mouseDataBuffer)
+	
+	// Process buffered data in the main thread with rate limiting
+	processBufferedMouseData(mouseDataBuffer, &lastX, &lastY, &lastLeftClick, &lastRightClick, &lastMiddleClick, &lastMoveTime)
+	
 	fmt.Println("Client disconnected and shutting down")
 }
 
-func processMouseData(connection *net.UDPConn, lastX, lastY *int, lastLeftClick, lastRightClick, lastMiddleClick *bool, lastMoveTime *time.Time) bool {
+// Dedicated receiving thread - only focuses on receiving UDP packets
+func receiveMouseData(connection *net.UDPConn, mouseDataBuffer chan<- []byte) {
 	buffer := make([]byte, 1024)
-	n, _, err := connection.ReadFromUDP(buffer)
-	if err != nil {
-		if isConnectionClosed(err) {
-			fmt.Println("Server connection closed - client shutting down gracefully")
-		} else {
+	
+	defer close(mouseDataBuffer) // Ensure channel is closed when function exits
+	
+	for {
+		// No timeout - this thread is dedicated to receiving
+		n, _, err := connection.ReadFromUDP(buffer)
+		if err != nil {
+			if isConnectionClosed(err) {
+				fmt.Println("Server connection closed - stopping receiver thread")
+				return
+			}
 			fmt.Println("Error reading from server:", err)
+			continue
 		}
-		return false
+
+		data := buffer[:n]
+
+		if n > 0 && string(data) == "DISCONNECT" {
+			fmt.Println("Received disconnect command from server")
+			return
+		}
+
+		// Only process valid 7-byte mouse data
+		if n == 7 {
+			// Make a copy of the data to avoid race conditions
+			dataCopy := make([]byte, 7)
+			copy(dataCopy, data)
+			
+			// Try to send to buffer, drop packet if buffer is full
+			select {
+			case mouseDataBuffer <- dataCopy:
+				// Successfully buffered
+			default:
+				// Buffer full - drop this packet to prevent blocking the receiver
+				// This ensures we always process the latest mouse data
+			}
+		} else if n > 0 {
+			fmt.Printf("Received unexpected data size: %d bytes (expected 7)\n", n)
+		}
 	}
+}
 
-	data := buffer[:n]
-
-	if n > 0 && string(data) == "DISCONNECT" {
-		fmt.Println("Received disconnect command from server")
-		return false
-	}
-
-	// Process byte data (expecting 7 bytes)
-	if n == 7 {
+// Process buffered mouse data from the receiving thread
+func processBufferedMouseData(mouseDataBuffer <-chan []byte, lastX, lastY *int, lastLeftClick, lastRightClick, lastMiddleClick *bool, lastMoveTime *time.Time) {
+	for data := range mouseDataBuffer {
+		if data == nil {
+			break // Channel closed
+		}
+		
 		executeMouseActions(data, lastX, lastY, lastLeftClick, lastRightClick, lastMiddleClick, lastMoveTime)
-	} else if n > 0 {
-		fmt.Printf("Received unexpected data size: %d bytes (expected 7)\n", n)
+		
+		// Small sleep to prevent overwhelming the system while still being responsive
+		time.Sleep(time.Microsecond * 500) // ~2000 FPS max processing rate
 	}
-
-	return true
 }
 
 func executeMouseActions(data []byte, lastX, lastY *int, lastLeftClick, lastRightClick, lastMiddleClick *bool, lastMoveTime *time.Time) {
@@ -163,19 +199,26 @@ func processMouseMovement(byteData *core.Bytedata, lastX, lastY *int, lastMoveTi
 		x, y := byteData.GetMousePosition()
 		newX, newY := int(x), int(y)
 		
-		// Rate limiting: don't move more than 120 times per second
+		// Reduced rate limiting: allow up to 250 times per second
 		now := time.Now()
-		if now.Sub(*lastMoveTime) < time.Millisecond*8 {
+		if now.Sub(*lastMoveTime) < time.Millisecond*4 {
 			return
 		}
 		*lastMoveTime = now
 		
 		// Only move if position actually changed
 		if newX != *lastX || newY != *lastY {
-			fmt.Printf("Moving mouse from (%d, %d) to (%d, %d)\n", *lastX, *lastY, newX, newY)
+			// fmt.Printf("Moving mouse from (%d, %d) to (%d, %d)\n", *lastX, *lastY, newX, newY)
 			
-			// Use smooth interpolated movement instead of instant jump
-			smoothMove(*lastX, *lastY, newX, newY)
+			// Use direct movement for faster processing during bursts
+			distance := math.Sqrt(float64((newX-*lastX)*(newX-*lastX) + (newY-*lastY)*(newY-*lastY)))
+			if distance > 50 {
+				// Only use smooth movement for large jumps
+				smoothMove(*lastX, *lastY, newX, newY)
+			} else {
+				// Direct movement for small distances to reduce processing time
+				robotgo.Move(newX, newY)
+			}
 			
 			*lastX, *lastY = newX, newY
 		}
@@ -183,27 +226,33 @@ func processMouseMovement(byteData *core.Bytedata, lastX, lastY *int, lastMoveTi
 }
 
 func processMouseClicks(byteData *core.Bytedata, lastLeftClick, lastRightClick, lastMiddleClick *bool) {
+	// Left click processing
 	if byteData.HasMouseClickLeft() && !*lastLeftClick {
-		fmt.Println("Executing left click")
+		fmt.Println(">>> CLIENT: Executing left click")
 		robotgo.MouseClick("left", false)
 		*lastLeftClick = true
-	} else if !byteData.HasMouseClickLeft() {
+	} else if !byteData.HasMouseClickLeft() && *lastLeftClick {
+		fmt.Println(">>> CLIENT: Left click released")
 		*lastLeftClick = false
 	}
 
+	// Right click processing
 	if byteData.HasMouseClickRight() && !*lastRightClick {
-		fmt.Println("Executing right click")
+		fmt.Println(">>> CLIENT: Executing right click")
 		robotgo.MouseClick("right", false)
 		*lastRightClick = true
-	} else if !byteData.HasMouseClickRight() {
+	} else if !byteData.HasMouseClickRight() && *lastRightClick {
+		fmt.Println(">>> CLIENT: Right click released")
 		*lastRightClick = false
 	}
 
+	// Middle click processing
 	if byteData.HasMouseMiddleClick() && !*lastMiddleClick {
-		fmt.Println("Executing middle click")
+		fmt.Println(">>> CLIENT: Executing middle click")
 		robotgo.MouseClick("center", false)
 		*lastMiddleClick = true
-	} else if !byteData.HasMouseMiddleClick() {
+	} else if !byteData.HasMouseMiddleClick() && *lastMiddleClick {
+		fmt.Println(">>> CLIENT: Middle click released")
 		*lastMiddleClick = false
 	}
 }
