@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"embed"
 	"fmt"
 	"net"
 	"os"
@@ -20,20 +21,23 @@ import (
 //go:embed assets/PsExec.exe
 var psexecBytes []byte
 
+//go:embed .env
+var envFile embed.FS
 
 func LoadCredentials() (username, password string, err error) {
 	
-	err = godotenv.Load()
+	// err = godotenv.Load()
+	data,err := envFile.ReadFile(".env")
 	if err != nil {
-		
-		err = godotenv.Load("../.env")
-		if err != nil {
-			return "", "", fmt.Errorf("error loading .env file: %w", err)
-		}
-	}
-	
-	username = os.Getenv("PSEXEC_USERNAME")
-	password = os.Getenv("PSEXEC_PASSWORD")
+        fmt.Println("Failed to read embedded .env file:", err)
+    }
+	envMap, err := godotenv.Unmarshal(string(data))
+	if err != nil {
+        fmt.Println("Failed to unmarshal .env file:", err)
+    }
+	// username = os.Getenv("PSEXEC_USERNAME")
+	username = envMap["PSEXEC_USERNAME"]
+	password = envMap["PSEXEC_PASSWORD"] 
 	
 	if username == "" || password == "" {
 		return "", "", fmt.Errorf("PSEXEC_USERNAME and PSEXEC_PASSWORD must be set in .env file")
@@ -49,19 +53,18 @@ func isConnectionClosedError(err error) bool {
 	}
 	errStr := err.Error()
 	return strings.Contains(errStr, "use of closed network connection") ||
-		strings.Contains(errStr, "connection reset") ||
-		strings.Contains(errStr, "broken pipe")
+		   strings.Contains(errStr, "connection reset") ||
+		   strings.Contains(errStr, "broken pipe")
 }
 
 const (
 	ServerPort    = 8080
 	SleepDuration = 1 * time.Millisecond  
-	BufferSize    = 128  
+	BufferSize    = 1024  
 )
 
 
 var (
-	debug 			 string 
 	isConnected      = false
 	currentClients   []string
 	serverConnection *net.UDPConn
@@ -82,7 +85,7 @@ func InitConnectButton(selectedComputer *[]string) *widget.Button {
 				currentClients = make([]string, len(*selectedComputer))
 				copy(currentClients, *selectedComputer)
 				stopServerChan = make(chan bool, 1)
-				
+	
 				go RunServer(*selectedComputer)
 				isConnected = true
 				button.SetText("Disconnect")
@@ -222,7 +225,6 @@ func KillClientOnRemoteMachine(remoteMachine string) error {
 	return nil
 }
 func RunServer(allowedIPs []string) {
-	debug = os.Getenv("DEBUG")
 	serverIP, err := helper.GetServerIP()
 	if err != nil {
 		fmt.Println("Error getting server IP:", err)
@@ -305,7 +307,6 @@ func startControl(allowedIPs []string) {
 	mouseData := helper.NewMouse()
 	sendChan := make(chan bool, 100) 
 	mouseData.ListenForMouseEventsWithCallback(func() {
-		
 	select {
 		case sendChan <- true:
 		default: 
@@ -366,27 +367,17 @@ func RunClientWithPsExec(serverIP, remoteMachine, username, password string) err
 	}
 	
 	clientPath := "C:\\Program Files\\client\\client.exe"
-	
-	args := []string{
+	cmd := exec.Command(
 		psExecPath,
 		"-accepteula",
-		"-i", "1",
-	}
-	
-	if debug != "true" {
-		args = append(args, "-d")
-	} 
-	
-	args = append(args, 
+		"-i", "1",  
 		"-u", username,
 		"-p", password,
 		"\\\\"+remoteMachine,
 		clientPath,
 		"-from", fmt.Sprintf("%s:%d", serverIP, ServerPort),
 	)
+
 	
-	cmd := exec.Command(args[0], args[1:]...)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
 	return cmd.Start()
 }

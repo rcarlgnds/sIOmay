@@ -1,6 +1,7 @@
 package helpers
 
 import (
+	"fmt"
 	"sIOmay/core"
 	"sync"
 
@@ -59,7 +60,11 @@ func (mouse *Mouse) processMouseEvent(ev hook.Event) {
 	
 	mouse.updateMousePosition(ev)
 	
-	mouse.ByteData = core.NewBytedata()
+	if mouse.ByteData == nil {
+		mouse.ByteData = core.NewBytedata()
+	}
+	
+	mouse.ByteData.ClearMovementAndScroll()
 	
 	mouse.handleMouseEventType(ev)
 	
@@ -79,19 +84,18 @@ func (mouse *Mouse) handleMouseEventType(ev hook.Event) {
 		mouse.ByteData.MouseMove(int16(ev.X), int16(ev.Y))
 		
 	case hook.MouseDown:
+		fmt.Printf("=== MOUSE DOWN EVENT (Button: %d) ===\n", ev.Button)
 		mouse.handleMouseClick(ev)
-		// Also include position for click events
 		mouse.ByteData.MouseMove(int16(ev.X), int16(ev.Y))
-		
 	case hook.MouseDrag:
 		mouse.handleMouseDrag(ev)
 		
 	case hook.MouseUp:
+		fmt.Printf("=== MOUSE UP EVENT (Button: %d) ===\n", ev.Button)
 		mouse.handleMouseUp(ev)
 		
 	case hook.MouseWheel:
 		mouse.ByteData.MouseScroll(int16(ev.Rotation))
-		// Include position for scroll events
 		mouse.ByteData.MouseMove(int16(ev.X), int16(ev.Y))
 	}
 }
@@ -117,8 +121,17 @@ func (mouse *Mouse) handleMouseDrag(ev hook.Event) {
 }
 
 func (mouse *Mouse) handleMouseUp(ev hook.Event) {
-	// Include position for mouse up events
 	mouse.ByteData.MouseMove(int16(ev.X), int16(ev.Y))
+	
+	// Clear click flags based on which button was released
+	switch ev.Button {
+	case 1: // Left button released - clear left click flag
+		mouse.clearLeftClick()
+	case 2: // Right button released - clear right click flag
+		mouse.clearRightClick()  
+	case 3: // Middle button released - clear middle click flag
+		mouse.clearMiddleClick()
+	}
 	
 	if mouse.Dragging {
 		mouse.Dragging = false
@@ -192,4 +205,36 @@ func (mouse *Mouse) ClearByteData() {
 	defer mouse.Mu.Unlock()
 	
 	mouse.ByteData = nil
+}
+
+// ClearMovementAndScroll clears only movement and scroll flags, preserving click flags
+func (mouse *Mouse) ClearMovementAndScroll() {
+	mouse.Mu.Lock()
+	defer mouse.Mu.Unlock()
+	
+	if mouse.ByteData != nil {
+		mouse.ByteData.ClearMovementAndScroll()
+	}
+}
+
+// Clear individual click flags
+func (mouse *Mouse) clearLeftClick() {
+	if mouse.ByteData != nil {
+		fmt.Println(">>> CLEARING LEFT CLICK FLAG <<<")
+		mouse.ByteData.ClearMouseClickLeft()
+	}
+}
+
+func (mouse *Mouse) clearRightClick() {
+	if mouse.ByteData != nil {
+		fmt.Println(">>> CLEARING RIGHT CLICK FLAG <<<")
+		mouse.ByteData.ClearMouseClickRight()
+	}
+}
+
+func (mouse *Mouse) clearMiddleClick() {
+	if mouse.ByteData != nil {
+		fmt.Println(">>> CLEARING MIDDLE CLICK FLAG <<<")
+		mouse.ByteData.ClearMouseMiddleClick()
+	}
 }

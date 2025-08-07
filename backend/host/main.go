@@ -25,8 +25,8 @@ func isConnectionClosed(err error) bool {
 	}
 	errStr := err.Error()
 	return strings.Contains(errStr, "use of closed network connection") ||
-			strings.Contains(errStr, "connection reset") ||
-			strings.Contains(errStr, "broken pipe")
+		   strings.Contains(errStr, "connection reset") ||
+		   strings.Contains(errStr, "broken pipe")
 }
 
 func smoothMove(fromX, fromY, toX, toY int) {

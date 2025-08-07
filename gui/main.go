@@ -1,9 +1,10 @@
 package main
 
 import (
+	"sIOmay/gui/pages"
+
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/app"
-	"sIOmay/gui/pages"
 )
 
 func main() {

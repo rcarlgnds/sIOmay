@@ -111,6 +111,29 @@ func (d *Bytedata) Clear() {
     }
 }
 
+func (d *Bytedata) ClearMouseClickLeft() {
+    d.data[0] &^= byte(MouseClickLeft)
+}
+
+func (d *Bytedata) ClearMouseClickRight() {
+    d.data[0] &^= byte(MouseClickRight)
+}
+
+func (d *Bytedata) ClearMouseMiddleClick() {
+    d.data[0] &^= byte(MouseMiddleClick)
+}
+
+// Clear movement and scroll flags but preserve click flags
+func (d *Bytedata) ClearMovementAndScroll() {
+    d.data[0] &^= byte(MouseMove)
+    d.data[0] &^= byte(MouseScroll)
+    // Clear coordinate and scroll data
+    d.data[2] = 0
+    d.data[3] = 0
+    d.data[4] = 0 
+    d.data[5] = 0
+}
+
 func NewBytedata() *Bytedata {
     return &Bytedata{}
 }
