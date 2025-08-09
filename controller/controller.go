@@ -20,13 +20,15 @@ import (
 //go:embed assets/PsExec.exe
 var psexecBytes []byte
 
+//go:embed .env
+var envBytes []byte
 
 func LoadCredentials() (username, password string, err error) {
 	
 	err = godotenv.Load()
 	if err != nil {
 		
-		err = godotenv.Load("../.env")
+		err = godotenv.Load("./controller/.env")
 		if err != nil {
 			return "", "", fmt.Errorf("error loading .env file: %w", err)
 		}

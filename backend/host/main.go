@@ -4,15 +4,22 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"math"
 	"net"
 	"os"
 	"sIOmay/helpers"
 	"strings"
+	"time"
 
 	"github.com/go-vgo/robotgo"
 )
 
-// Helper function to check if error is due to connection being closed
+/*
+#cgo LDFLAGS: mouse_move.o -luser32
+extern void MoveMouse();
+*/
+import "C"
+
 func isConnectionClosed(err error) bool {
 	if err == nil {
 		return false
@@ -22,7 +29,50 @@ func isConnectionClosed(err error) bool {
 		   strings.Contains(errStr, "connection reset") ||
 		   strings.Contains(errStr, "broken pipe")
 }
-
+func smoothMove(fromX, fromY, toX, toY int) {
+	dx := float64(toX - fromX)
+	dy := float64(toY - fromY)
+	distance := math.Sqrt(dx*dx + dy*dy)
+	
+	if distance < 3 {
+		robotgo.Move(toX, toY)
+		return
+	}
+	
+	steps := int(math.Max(5, math.Min(25, distance/3)))
+	
+	for i := 1; i <= steps; i++ {
+		progress := float64(i) / float64(steps)
+		
+		progress = 1 - math.Pow(1-progress, 2.5)
+		
+		currentX := fromX + int(dx*progress)
+		currentY := fromY + int(dy*progress)
+		
+		robotgo.Move(currentX, currentY)
+		
+		time.Sleep(time.Microsecond * 500)
+	}
+	
+	robotgo.Move(toX, toY)
+}
+func processMouseMovement(x, y int, lastX, lastY *int, lastMoveTime *time.Time) {
+	newX, newY := x, y
+	
+	now := time.Now()
+	if now.Sub(*lastMoveTime) < time.Millisecond*16 {
+		return
+	}
+	*lastMoveTime = now
+	
+	if newX != *lastX || newY != *lastY {
+		fmt.Printf("Moving mouse from (%d, %d) to (%d, %d)\n", *lastX, *lastY, newX, newY)
+		
+		smoothMove(*lastX, *lastY, newX, newY)
+		
+		*lastX, *lastY = newX, newY
+	}
+}
 	func main() {
 		fromIP := flag.String("from", "", "IP address of the controller (e.g., 10.22.65.133:8080)")
 		flag.Parse()
@@ -45,17 +95,16 @@ func isConnectionClosed(err error) bool {
 			fmt.Println("Error sending registration message:", err)
 			return
 		}
-		var lastX, lastY int
-		var wasClicked bool
-		
-		// Set larger buffer and disable Nagle's algorithm for better performance
-		connection.SetReadBuffer(65536)
-		
-		for {
+	var lastX, lastY int
+	var wasClicked bool
+	var lastMoveTime time.Time
+	C.MoveMouse()
+	connection.SetReadBuffer(65536)
+	
+	for {
 			buffer := make([]byte, 1024)
 			n, _, err := connection.ReadFromUDP(buffer)
 			if err != nil {
-				// Check if it's a "connection closed" error (normal during disconnect)
 				if isConnectionClosed(err) {
 					fmt.Println("Server connection closed - client shutting down gracefully")
 				} else {
@@ -67,7 +116,6 @@ func isConnectionClosed(err error) bool {
 			data := buffer[:n]
 			msg := string(data)
 			
-			// Check for disconnect command
 			if msg == "DISCONNECT" {
 				fmt.Println("Received disconnect command from server")
 				break
@@ -77,20 +125,13 @@ func isConnectionClosed(err error) bool {
 				continue
 			}
 			
-			var mouse helpers.Mouse
-			err = json.Unmarshal(data, &mouse)
-			if err != nil {
-				continue
-			}
-			
-			// Only move if position actually changed
-			if mouse.Current.X != lastX || mouse.Current.Y != lastY {
-				// Use instant movement - no smoothing
-				robotgo.Move(mouse.Current.X, mouse.Current.Y)
-				lastX, lastY = mouse.Current.X, mouse.Current.Y
-			}
-			
-			// Handle clicks
+		var mouse helpers.Mouse
+		err = json.Unmarshal(data, &mouse)
+		if err != nil {
+			continue
+		}
+		
+		processMouseMovement(mouse.Current.X, mouse.Current.Y, &lastX, &lastY, &lastMoveTime)			// Handle clicks
 			if mouse.Clicks > 0 && !wasClicked {
 				if mouse.Button == 1 {
 					robotgo.MouseClick("left", false)
