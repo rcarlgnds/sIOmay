@@ -59,16 +59,16 @@ func smoothMove(fromX, fromY, toX, toY int) {
 func processMouseMovement(x, y int, lastX, lastY *int, lastMoveTime *time.Time) {
 	newX, newY := x, y
 	
-	now := time.Now()
-	if now.Sub(*lastMoveTime) < time.Millisecond*16 {
-		return
-	}
-	*lastMoveTime = now
-	
 	if newX != *lastX || newY != *lastY {
-		fmt.Printf("Moving mouse from (%d, %d) to (%d, %d)\n", *lastX, *lastY, newX, newY)
-		
-		smoothMove(*lastX, *lastY, newX, newY)
+		now := time.Now()
+		if now.Sub(*lastMoveTime) >= time.Millisecond*16 {
+			fmt.Printf("Moving mouse from (%d, %d) to (%d, %d)\n", *lastX, *lastY, newX, newY)
+			
+			smoothMove(*lastX, *lastY, newX, newY)
+			*lastMoveTime = now
+		} else {
+			robotgo.Move(newX, newY)
+		}
 		
 		*lastX, *lastY = newX, newY
 	}
@@ -98,6 +98,9 @@ func processMouseMovement(x, y int, lastX, lastY *int, lastMoveTime *time.Time) 
 	var lastX, lastY int
 	var wasClicked bool
 	var lastMoveTime time.Time
+	var lastClickTime time.Time
+	var lastClickButton int
+	var lastClickCount int
 	C.MoveMouse()
 	connection.SetReadBuffer(65536)
 	
@@ -131,17 +134,46 @@ func processMouseMovement(x, y int, lastX, lastY *int, lastMoveTime *time.Time) 
 			continue
 		}
 		
-		processMouseMovement(mouse.Current.X, mouse.Current.Y, &lastX, &lastY, &lastMoveTime)			// Handle clicks
-			if mouse.Clicks > 0 && !wasClicked {
-				if mouse.Button == 1 {
-					robotgo.MouseClick("left", false)
-				} else if mouse.Button == 2 {
-					robotgo.MouseClick("right", false)
-				}
-				wasClicked = true
-			} else if mouse.Clicks == 0 {
-				wasClicked = false
+		if mouse.Clicks > 0 {
+			fmt.Printf("Received: X=%d, Y=%d, Button=%d, Clicks=%d, wasClicked=%t\n", 
+				mouse.Current.X, mouse.Current.Y, mouse.Button, mouse.Clicks, wasClicked)
+		} else if mouse.Clicks == 0 && (mouse.Button != 0 || wasClicked) {
+			fmt.Printf("Received RELEASE: X=%d, Y=%d, Button=%d, Clicks=%d, wasClicked=%t\n", 
+				mouse.Current.X, mouse.Current.Y, mouse.Button, mouse.Clicks, wasClicked)
+		}
+		
+		processMouseMovement(mouse.Current.X, mouse.Current.Y, &lastX, &lastY, &lastMoveTime)
+		
+		now := time.Now()
+		clickDuplicate := false
+		
+		if mouse.Clicks > 0 && mouse.Button == lastClickButton && 
+		   mouse.Clicks == lastClickCount && 
+		   now.Sub(lastClickTime) < time.Millisecond*100 {
+			clickDuplicate = true
+			fmt.Printf("Duplicate click detected - ignoring (Button %d, Clicks %d, TimeSince: %v)\n", 
+				mouse.Button, mouse.Clicks, now.Sub(lastClickTime))
+		}
+		
+		if mouse.Clicks > 0 && !wasClicked && !clickDuplicate {
+			fmt.Printf("Click detected: Button %d, Clicks %d\n", mouse.Button, mouse.Clicks)
+			if mouse.Button == 1 {
+				robotgo.MouseClick("left", false)
+				fmt.Println("Executed left click")
+			} else if mouse.Button == 2 {
+				robotgo.MouseClick("right", false)
+				fmt.Println("Executed right click")
 			}
+			wasClicked = true
+			lastClickTime = now
+			lastClickButton = mouse.Button
+			lastClickCount = mouse.Clicks
+		} else if mouse.Clicks == 0 {
+			if wasClicked {
+				fmt.Println("Click released - resetting wasClicked")
+			}
+			wasClicked = false
+		}
 		}
 		fmt.Println("Client disconnected and shutting down")
 	}

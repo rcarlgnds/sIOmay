@@ -1,8 +1,9 @@
 package helpers
 
 import (
-	hook "github.com/robotn/gohook"
 	"sync"
+
+	hook "github.com/robotn/gohook"
 )
 
 type Coordinates struct {
@@ -55,6 +56,8 @@ func (mouse *Mouse) ListenForMouseEventsWithCallback(callback func()) {
 				}
 				mouse.DragEnd = Coordinates{X: int(ev.X), Y: int(ev.Y)}
 			case hook.MouseUp:
+				mouse.Clicks = 0
+				mouse.Button = 0
 				if mouse.Dragging {
 					mouse.Dragging = false
 				}
