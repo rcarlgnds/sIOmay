@@ -6,8 +6,8 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	helper "sIOmay/helpers"
-	"strings"
 	"sync"
 	"time"
 
@@ -17,6 +17,15 @@ import (
 	_ "embed"
 )
 
+
+/*
+#cgo CXXFLAGS: -std=c++17 -Ibackend/vendor/asio/asio/include/
+#cgo LDFLAGS: -L. -lcontroller -lstdc++ -lws2_32 -luser32 -static
+#include "../backend/internal_lib/internal_lib.hpp"
+*/
+import "C"
+
+
 //go:embed assets/PsExec.exe
 var psexecBytes []byte
 
@@ -24,36 +33,26 @@ var psexecBytes []byte
 var envBytes []byte
 
 func LoadCredentials() (username, password string, err error) {
-	
-	err = godotenv.Load()
+	envMap, err := godotenv.Unmarshal(string(envBytes))
 	if err != nil {
-		
-		err = godotenv.Load("./controller/.env")
-		if err != nil {
-			return "", "", fmt.Errorf("error loading .env file: %w", err)
-		}
+		return "", "", fmt.Errorf("error parsing embedded .env content: %w", err)
 	}
-	
+
+	for key, value := range envMap {
+		os.Setenv(key, value)
+	}
+
 	username = os.Getenv("PSEXEC_USERNAME")
 	password = os.Getenv("PSEXEC_PASSWORD")
-	
+
 	if username == "" || password == "" {
 		return "", "", fmt.Errorf("PSEXEC_USERNAME and PSEXEC_PASSWORD must be set in .env file")
 	}
-	
+
 	return username, password, nil
 }
 
 
-func isConnectionClosedError(err error) bool {
-	if err == nil {
-		return false
-	}
-	errStr := err.Error()
-	return strings.Contains(errStr, "use of closed network connection") ||
-		   strings.Contains(errStr, "connection reset") ||
-		   strings.Contains(errStr, "broken pipe")
-}
 
 const (
 	ServerPort    = 8080
@@ -68,6 +67,7 @@ var (
 	serverConnection *net.UDPConn
 	stopServerChan   chan bool
 	connectionMutex  sync.Mutex
+	serverWg        sync.WaitGroup
 )
 func InitConnectButton(selectedComputer *[]string) *widget.Button {
 	button := widget.NewButton("Connect", nil)
@@ -82,9 +82,8 @@ func InitConnectButton(selectedComputer *[]string) *widget.Button {
 			if len(*selectedComputer) > 0 {
 				currentClients = make([]string, len(*selectedComputer))
 				copy(currentClients, *selectedComputer)
-				stopServerChan = make(chan bool, 1)
-				
-				go RunServer(*selectedComputer)
+				serverWg.Add(1)
+				go RunServer(*selectedComputer) 				
 				isConnected = true
 				button.SetText("Disconnect")
 				button.Refresh() 
@@ -100,14 +99,14 @@ func InitConnectButton(selectedComputer *[]string) *widget.Button {
 			
 			go func() {
 				DisconnectFromClients()
+
 				
-				connectionMutex.Lock()
-				isConnected = false
-				connectionMutex.Unlock()
-				
-				button.SetText("Connect")
-				button.Refresh()
-				fmt.Println("Button changed back to Connect")
+					connectionMutex.Lock()
+					isConnected = false
+					connectionMutex.Unlock()
+					button.SetText("Connect")
+					button.Refresh()
+					fmt.Println("Button changed back to Connect")
 			}()
 		}
 	}
@@ -117,54 +116,13 @@ func InitConnectButton(selectedComputer *[]string) *widget.Button {
 
 func DisconnectFromClients() {
 	fmt.Println("Starting disconnection process...")
-	
-	
-	if serverConnection != nil {
-		fmt.Println("Sending disconnect messages to clients...")
-		disconnectMsg := []byte("DISCONNECT")
-		for _, remoteMachine := range currentClients {
-			addr, err := net.ResolveUDPAddr("udp", fmt.Sprintf("%s:%d", remoteMachine, ServerPort))
-			if err == nil {
-				_, writeErr := serverConnection.WriteToUDP(disconnectMsg, addr)
-				if writeErr != nil {
-					fmt.Printf("Error sending disconnect to %s: %v\n", remoteMachine, writeErr)
-				} else {
-					fmt.Printf("Sent disconnect message to %s\n", remoteMachine)
-				}
-			} else {
-				fmt.Printf("Error resolving address for %s: %v\n", remoteMachine, err)
-			}
-		}
-		
-		fmt.Println("Waiting for clients to process disconnect...")
-		time.Sleep(1 * time.Second)
-	} else {
-		fmt.Println("No server connection found")
-	}
-	
-	
-	if stopServerChan != nil {
-		fmt.Println("Signaling server to stop...")
-		select {
-		case stopServerChan <- true:
-			fmt.Println("Stop signal sent")
-		default:
-			fmt.Println("Stop channel full or closed")
-		}
-	} else {
-		fmt.Println("No stop channel found")
-	}
-	
-	
-	if serverConnection != nil {
-		fmt.Println("Closing server connection...")
-		serverConnection.Close()
-		serverConnection = nil
-		fmt.Println("Server connection closed")
-	}
-	
-	
-	fmt.Println("Killing client processes on remote machines...")
+	StopServer()
+	fmt.Println("Waiting for server goroutine to exit...")
+	serverWg.Wait()
+	fmt.Println("Server goroutine finished.")
+
+
+		fmt.Println("Killing client processes on remote machines...")
 	for _, remoteMachine := range currentClients {
 		fmt.Printf("Attempting to kill client on %s...\n", remoteMachine)
 		err := KillClientOnRemoteMachine(remoteMachine)
@@ -174,9 +132,8 @@ func DisconnectFromClients() {
 			fmt.Printf("Client killed on %s\n", remoteMachine)
 		}
 	}
-	
+
 	currentClients = nil
-	fmt.Println("Disconnected from all clients")
 }
 
 func KillClientOnRemoteMachine(remoteMachine string) error {
@@ -234,9 +191,7 @@ func RunServer(allowedIPs []string) {
 		return
 	}
 
-	go func() {
 		startControl(allowedIPs)
-	}()
 }
 func IsPortAvailable(ip string, port int) bool {
 	address := fmt.Sprintf("%s:%d", ip, port)
@@ -248,20 +203,18 @@ func IsPortAvailable(ip string, port int) bool {
 	return true
 }
 func startControl(allowedIPs []string) {
+	defer serverWg.Done()
 	serverIP, err := helper.GetServerIP()
 	if err != nil {
 		panic(err)
 	}
-	
-	
 	username, password, err := LoadCredentials()
 	if err != nil {
 		fmt.Printf("Error loading credentials: %v\n", err)
 		fmt.Println("Please create a .env file with PSEXEC_USERNAME and PSEXEC_PASSWORD")
 		return
 	}
-	
-	
+
 	for _, remoteMachine := range allowedIPs {
 		err := RunClientWithPsExec(serverIP, remoteMachine, username, password)
 		if err != nil {
@@ -270,96 +223,10 @@ func startControl(allowedIPs []string) {
 			fmt.Printf("PsExec started on %s with IP %s\n", remoteMachine, serverIP)
 		}
 	}
+
+	runtime.LockOSThread()
+	C.startSiomayServerC()
 	
-	
-	connection, _, err := helper.StartServer(serverIP, ServerPort)
-	if err != nil {
-		fmt.Println("Error starting server:", err)
-		return
-	}
-	
-	
-	connectionMutex.Lock()
-	serverConnection = connection
-	connectionMutex.Unlock()
-	
-	defer func() {
-		connection.Close()
-		connectionMutex.Lock()
-		serverConnection = nil
-		connectionMutex.Unlock()
-	}()
-	
-	fmt.Printf("Server is listening on port %d (%s)\n", ServerPort, serverIP)
-	
-	clientAddresses := make(map[string]*net.UDPAddr)
-	for _, ip := range allowedIPs {
-		addr, err := net.ResolveUDPAddr("udp", fmt.Sprintf("%s:%d", ip, ServerPort))
-		if err != nil {
-			fmt.Printf("Failed to resolve UDP address for IP %s: %v\n", ip, err)
-			continue
-		}
-		clientAddresses[ip] = addr
-	}
-	
-	mouseData := helper.NewMouse()
-	
-	
-	sendChan := make(chan bool, 100) 
-	
-	
-	mouseData.ListenForMouseEventsWithCallback(func() {
-		select {
-		case sendChan <- true:
-		default: 
-		}
-	})
-	
-	
-	go func() {
-		for {
-			select {
-			case <-sendChan:
-				mouseData.Mu.Lock()
-				helper.SendMouseMessageToClients(mouseData, clientAddresses, connection)
-				mouseData.Mu.Unlock()
-			case <-stopServerChan:
-				fmt.Println("Stopping mouse data sender...")
-				return
-			}
-		}
-	}()
-	
-	
-	buffer := make([]byte, BufferSize)
-	for {
-		select {
-		case <-stopServerChan:
-			fmt.Println("Stopping server...")
-			return
-		default:
-			
-			connection.SetReadDeadline(time.Now().Add(100 * time.Millisecond))
-			
-			_, clientAddress, err := connection.ReadFromUDP(buffer)
-			if err != nil {
-				
-				if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
-					continue 
-				}
-				
-				if isConnectionClosedError(err) {
-					fmt.Println("Server connection closed - stopping UDP read loop")
-					return
-				}
-				fmt.Println("Error reading from UDP:", err)
-				continue
-			}
-			
-			helper.RegisterClient(clientAddress, clientAddresses)
-			helper.AcknowledgeClient(connection, clientAddress)
-		}
-	}
 }
 
 func RunClientWithPsExec(serverIP, remoteMachine, username, password string) error {
@@ -385,4 +252,7 @@ func RunClientWithPsExec(serverIP, remoteMachine, username, password string) err
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	return cmd.Start()
+}
+func StopServer() {
+    C.sendStopCommandC()
 }
