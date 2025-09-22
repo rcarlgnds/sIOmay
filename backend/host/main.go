@@ -9,11 +9,11 @@ import (
 )
 
 /*
-#cgo CXXFLAGS: -std=c++17 -I../vendor/asio/asio/include
-#cgo LDFLAGS: -L. -lcontroller -lstdc++ -lws2_32 -luser32 -static
-#include "../internal_lib/internal_lib.hpp"
+#cgo LDFLAGS: -L. -lcor -lstdc++ -lws2_32 -luser32 -static
+#include "../internal_lib/extern.hpp"
 */
 import "C"
+
 
 func main() {
 	fromIP := flag.String("from", "", "IP address of the controller (e.g., 10.22.65.133:8080)")
@@ -39,5 +39,5 @@ func main() {
 	}
 	fmt.Printf("Starting client for %s:%d\n", ip, port)
 
-	C.startClientC(C.CString("239.255.0.1"), C.int(8080))
+	C.startClientC()
 }

@@ -8,8 +8,11 @@ import (
 	"path/filepath"
 	"runtime"
 	helper "sIOmay/helpers"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
+	"unsafe"
 
 	"fyne.io/fyne/v2/widget"
 	"github.com/joho/godotenv"
@@ -17,14 +20,11 @@ import (
 	_ "embed"
 )
 
-
 /*
-#cgo CXXFLAGS: -std=c++17 -Ibackend/vendor/asio/asio/include/
-#cgo LDFLAGS: -L. -lcontroller -lstdc++ -lws2_32 -luser32 -static
-#include "../backend/internal_lib/internal_lib.hpp"
+#cgo LDFLAGS: -L. -lcor -lstdc++ -lws2_32 -luser32 -static
+#include "../backend/internal_lib/extern.hpp"
 */
 import "C"
-
 
 //go:embed assets/PsExec.exe
 var psexecBytes []byte
@@ -69,6 +69,13 @@ var (
 	connectionMutex  sync.Mutex
 	serverWg        sync.WaitGroup
 )
+
+func init(){
+	fmt.Print("Starting server... (Init CF)\n")
+	go func() {
+		C.startSiomayServerC()
+	}()
+}
 func InitConnectButton(selectedComputer *[]string) *widget.Button {
 	button := widget.NewButton("Connect", nil)
 	
@@ -83,7 +90,7 @@ func InitConnectButton(selectedComputer *[]string) *widget.Button {
 				currentClients = make([]string, len(*selectedComputer))
 				copy(currentClients, *selectedComputer)
 				serverWg.Add(1)
-				go RunServer(*selectedComputer) 				
+				RunServer(*selectedComputer)
 				isConnected = true
 				button.SetText("Disconnect")
 				button.Refresh() 
@@ -116,14 +123,11 @@ func InitConnectButton(selectedComputer *[]string) *widget.Button {
 
 func DisconnectFromClients() {
 	fmt.Println("Starting disconnection process...")
-	StopServer()
-	fmt.Println("Waiting for server goroutine to exit...")
-	serverWg.Wait()
 	fmt.Println("Server goroutine finished.")
-
 
 		fmt.Println("Killing client processes on remote machines...")
 	for _, remoteMachine := range currentClients {
+		StopServerForIP(remoteMachine)
 		fmt.Printf("Attempting to kill client on %s...\n", remoteMachine)
 		err := KillClientOnRemoteMachine(remoteMachine)
 		if err != nil {
@@ -225,7 +229,6 @@ func startControl(allowedIPs []string) {
 	}
 
 	runtime.LockOSThread()
-	C.startSiomayServerC()
 	
 }
 
@@ -253,6 +256,21 @@ func RunClientWithPsExec(serverIP, remoteMachine, username, password string) err
 	cmd.Stderr = os.Stderr
 	return cmd.Start()
 }
-func StopServer() {
-    C.sendStopCommandC()
+func StopServerForIP(ipStr string) {
+	parts := strings.Split(ipStr, ".")
+	if len(parts) != 4 {
+		fmt.Println("Invalid IP format:", ipStr)
+		return
+	}
+
+	var ipParts [4]C.int
+	for i, p := range parts {
+		n, err := strconv.Atoi(p)
+		if err != nil {
+			fmt.Println("Invalid IP part:", p)
+			return
+		}
+		ipParts[i] = C.int(n)
+	}
+	C.sendStopCommandC((*C.int)(unsafe.Pointer(&ipParts[0])))
 }
