@@ -231,7 +231,9 @@ func startControl(allowedIPs []string) {
 	runtime.LockOSThread()
 	
 }
-
+func RunClientWithRuman(){
+	
+}
 func RunClientWithPsExec(serverIP, remoteMachine, username, password string) error {
 	tmpDir := os.TempDir()
 	psExecPath := filepath.Join(tmpDir, "PsExec.exe")
