@@ -1,11 +1,12 @@
 package controller
 
 import (
+	"bytes"
+	"encoding/json"
 	"fmt"
+	"io/ioutil"
 	"net"
-	"os"
-	"os/exec"
-	"path/filepath"
+	"net/http"
 	"runtime"
 	helper "sIOmay/helpers"
 	"strconv"
@@ -15,7 +16,6 @@ import (
 	"unsafe"
 
 	"fyne.io/fyne/v2/widget"
-	"github.com/joho/godotenv"
 
 	_ "embed"
 )
@@ -32,27 +32,14 @@ var psexecBytes []byte
 //go:embed .env
 var envBytes []byte
 
-func LoadCredentials() (username, password string, err error) {
-	envMap, err := godotenv.Unmarshal(string(envBytes))
-	if err != nil {
-		return "", "", fmt.Errorf("error parsing embedded .env content: %w", err)
-	}
 
-	for key, value := range envMap {
-		os.Setenv(key, value)
-	}
-
-	username = os.Getenv("PSEXEC_USERNAME")
-	password = os.Getenv("PSEXEC_PASSWORD")
-
-	if username == "" || password == "" {
-		return "", "", fmt.Errorf("PSEXEC_USERNAME and PSEXEC_PASSWORD must be set in .env file")
-	}
-
-	return username, password, nil
+func SetAuthToken(token string) {
+	authToken = token
 }
 
-
+func GetAuthToken() string {
+	return authToken
+}
 
 const (
 	ServerPort    = 8080
@@ -60,7 +47,11 @@ const (
 	BufferSize    = 1024  
 )
 
-
+type CmdexTokenDTO struct {
+	IPAddresses []string `json:"ipaddresses"`
+	TaskID      string   `json:"task_id"`
+	CommandLine string   `json:"commandLine"`
+}
 var (
 	isConnected      = false
 	currentClients   []string
@@ -68,6 +59,7 @@ var (
 	stopServerChan   chan bool
 	connectionMutex  sync.Mutex
 	serverWg        sync.WaitGroup
+	authToken       string
 )
 
 func init(){
@@ -125,64 +117,16 @@ func DisconnectFromClients() {
 	fmt.Println("Starting disconnection process...")
 	fmt.Println("Server goroutine finished.")
 
-		fmt.Println("Killing client processes on remote machines...")
+	stopSiomayClient := "0078d9f9-e676-4fed-a89f-480a1a0ed45f"
+	RunRuman(currentClients, stopSiomayClient)
 	for _, remoteMachine := range currentClients {
 		StopServerForIP(remoteMachine)
-		fmt.Printf("Attempting to kill client on %s...\n", remoteMachine)
-		err := KillClientOnRemoteMachine(remoteMachine)
-		if err != nil {
-			fmt.Printf("Failed to kill client on %s: %v\n", remoteMachine, err)
-		} else {
-			fmt.Printf("Client killed on %s\n", remoteMachine)
-		}
 	}
 
 	currentClients = nil
 }
 
-func KillClientOnRemoteMachine(remoteMachine string) error {
-	tmpDir := os.TempDir()
-	psExecPath := filepath.Join(tmpDir, "PsExec.exe")
-	
-	
-	username, password, err := LoadCredentials()
-	if err != nil {
-		return fmt.Errorf("error loading credentials: %w", err)
-	}
-	
-	fmt.Printf("Attempting to kill client.exe on %s...\n", remoteMachine)
-	
-	
-	cmd := exec.Command(
-		psExecPath,
-		"-accepteula",
-		"-u", username,
-		"-p", password,
-		"\\\\"+remoteMachine,
-		"taskkill", "/f", "/im", "client.exe",
-	)
-	
-	
-	output, err := cmd.CombinedOutput()
-	fmt.Printf("PsExec kill output for %s: %s\n", remoteMachine, string(output))
-	
-	if err != nil {
-		fmt.Printf("PsExec kill error for %s: %v\n", remoteMachine, err)
-		
-		
-		fmt.Printf("Trying alternative kill method for %s...\n", remoteMachine)
-		altCmd := exec.Command("taskkill", "/s", remoteMachine, "/u", username, "/p", password, "/f", "/im", "client.exe")
-		altOutput, altErr := altCmd.CombinedOutput()
-		fmt.Printf("Alternative kill output for %s: %s\n", remoteMachine, string(altOutput))
-		if altErr != nil {
-			fmt.Printf("Alternative kill error for %s: %v\n", remoteMachine, altErr)
-		}
-		return altErr
-	}
-	
-	fmt.Printf("Successfully killed client on %s\n", remoteMachine)
-	return nil
-}
+
 func RunServer(allowedIPs []string) {
 	serverIP, err := helper.GetServerIP()
 	if err != nil {
@@ -208,55 +152,51 @@ func IsPortAvailable(ip string, port int) bool {
 }
 func startControl(allowedIPs []string) {
 	defer serverWg.Done()
-	serverIP, err := helper.GetServerIP()
-	if err != nil {
-		panic(err)
-	}
-	username, password, err := LoadCredentials()
-	if err != nil {
-		fmt.Printf("Error loading credentials: %v\n", err)
-		fmt.Println("Please create a .env file with PSEXEC_USERNAME and PSEXEC_PASSWORD")
-		return
+	startSiomayId := "015c382c-3b93-43e4-a501-6b7c7addc638"
+	er := RunRuman(allowedIPs, startSiomayId)
+	if er != nil {
+		fmt.Printf("Error running Ruman: %v\n", er)
 	}
 
-	for _, remoteMachine := range allowedIPs {
-		err := RunClientWithPsExec(serverIP, remoteMachine, username, password)
-		if err != nil {
-			fmt.Printf("Failed to run PsExec on %s: %v\n", remoteMachine, err)
-		} else {
-			fmt.Printf("PsExec started on %s with IP %s\n", remoteMachine, serverIP)
-		}
-	}
 
 	runtime.LockOSThread()
 	
 }
-func RunClientWithRuman(){
+func RunRuman(ListIps []string, taskid string) error{
+	token := GetAuthToken()
+	url := "https://api-ruman.apps.slc.net/cmdex/exec-token"
 	
-}
-func RunClientWithPsExec(serverIP, remoteMachine, username, password string) error {
-	tmpDir := os.TempDir()
-	psExecPath := filepath.Join(tmpDir, "PsExec.exe")
-	if _, err := os.Stat(psExecPath); os.IsNotExist(err) {
-		err := os.WriteFile(psExecPath, psexecBytes, 0755)
-		if err != nil {
-			return fmt.Errorf("failed to write PsExec: %w", err)
-		}
+	payload := CmdexTokenDTO{
+		IPAddresses: ListIps,
+		TaskID:     taskid,
+		CommandLine: "",
 	}
-	clientPath := "C:\\Program Files\\client\\client.exe"
-	cmd := exec.Command(
-		psExecPath,
-		"-accepteula",
-		"-i", "1",
-		"-u", username,
-		"-p", password,
-		"\\\\"+remoteMachine,
-		clientPath,
-		"-from", fmt.Sprintf("%s:%d", serverIP, ServerPort),
-	)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	return cmd.Start()
+	
+	jsonPayload, err := json.Marshal(payload)
+	if err != nil {
+		return fmt.Errorf("failed to marshal JSON payload: %w", err)
+	}
+
+	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonPayload))
+	if err != nil {
+		return fmt.Errorf("failed to create HTTP request: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Content-Type", "application/json")
+
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		return fmt.Errorf("failed to execute HTTP request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK  || resp.StatusCode != http.StatusCreated {
+		body, _ := ioutil.ReadAll(resp.Body)
+		return fmt.Errorf("Ruman API error: %s", body)
+	}
+
+	return nil
 }
 func StopServerForIP(ipStr string) {
 	parts := strings.Split(ipStr, ".")

@@ -4,6 +4,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"sIOmay/controller"
 	"sIOmay/gui/pages"
 
 	"fyne.io/fyne/v2"
@@ -17,6 +18,7 @@ func main() {
 		fmt.Println("Usage: -token <your_token>")
 		os.Exit(1)
 	}
+	controller.SetAuthToken(*token)
 	application := app.New()
 	window := application.NewWindow("sIOmay 🥟")
 	window.Resize(fyne.NewSize(1100, 550))
