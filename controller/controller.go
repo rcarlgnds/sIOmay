@@ -41,6 +41,20 @@ func GetAuthToken() string {
 	return authToken
 }
 
+func IsConnected() bool {
+	connectionMutex.Lock()
+	defer connectionMutex.Unlock()
+	return isConnected
+}
+
+func GetConnectedClients() []string {
+	connectionMutex.Lock()
+	defer connectionMutex.Unlock()
+	result := make([]string, len(connectedClients))
+	copy(result, connectedClients)
+	return result
+}
+
 const (
 	ServerPort    = 8080
 	SleepDuration = 1 * time.Millisecond  
@@ -55,6 +69,7 @@ type CmdexTokenDTO struct {
 var (
 	isConnected      = false
 	currentClients   []string
+	connectedClients []string  // Track actually connected clients
 	serverConnection *net.UDPConn
 	stopServerChan   chan bool
 	connectionMutex  sync.Mutex
@@ -76,41 +91,80 @@ func InitConnectButton(selectedComputer *[]string) *widget.Button {
 		defer connectionMutex.Unlock()
 		
 		if !isConnected {
-			
+			// Initial connection
 			fmt.Printf("Connecting to %v\n", *selectedComputer)
 			if len(*selectedComputer) > 0 {
 				currentClients = make([]string, len(*selectedComputer))
 				copy(currentClients, *selectedComputer)
+				connectedClients = make([]string, len(*selectedComputer))
+				copy(connectedClients, *selectedComputer)
 				serverWg.Add(1)
 				RunServer(*selectedComputer)
 				isConnected = true
-				button.SetText("Disconnect")
+				button.SetText("Disconnect All")
 				button.Refresh() 
-				fmt.Println("Button changed to Disconnect")
+				fmt.Println("Button changed to Disconnect All")
 			} else {
 				fmt.Println("No computers selected.")
 			}
 		} else {
+			// Check if we're adding new connections or disconnecting
+			newConnections := []string{}
+			for _, selected := range *selectedComputer {
+				isAlreadyConnected := false
+				for _, connected := range connectedClients {
+					if selected == connected {
+						isAlreadyConnected = true
+						break
+					}
+				}
+				if !isAlreadyConnected {
+					newConnections = append(newConnections, selected)
+				}
+			}
 			
-			fmt.Println("Disconnect button clicked - starting disconnection...")
-			button.SetText("Disconnecting...")
-			button.Refresh() 
-			
-			go func() {
-				DisconnectFromClients()
-
+			if len(newConnections) > 0 {
+				// Adding new connections
+				fmt.Printf("Adding new connections to %v\n", newConnections)
+				AddNewConnections(newConnections)
+			} else {
+				// Disconnect all
+				fmt.Println("Disconnect button clicked - starting disconnection...")
+				button.SetText("Disconnecting...")
+				button.Refresh() 
 				
+				go func() {
+					DisconnectFromClients()
 					connectionMutex.Lock()
 					isConnected = false
+					connectedClients = []string{}
 					connectionMutex.Unlock()
 					button.SetText("Connect")
 					button.Refresh()
 					fmt.Println("Button changed back to Connect")
-			}()
+				}()
+			}
 		}
 	}
 	
 	return button
+}
+
+func AddNewConnections(newIPs []string) {
+	fmt.Printf("Adding new connections to %v\n", newIPs)
+	
+	// Add new IPs to connected clients list
+	connectedClients = append(connectedClients, newIPs...)
+	currentClients = append(currentClients, newIPs...)
+	
+	// Run server for new connections
+	startSiomayId := "015c382c-3b93-43e4-a501-6b7c7addc638"
+	err := RunRuman(newIPs, startSiomayId)
+	if err != nil {
+		fmt.Printf("Error running Ruman for new connections: %v\n", err)
+	}
+	
+	fmt.Printf("New connections added. Total connected clients: %v\n", connectedClients)
 }
 
 func DisconnectFromClients() {
@@ -124,6 +178,7 @@ func DisconnectFromClients() {
 	}
 
 	currentClients = nil
+	connectedClients = nil
 }
 
 

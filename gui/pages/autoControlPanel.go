@@ -15,9 +15,6 @@ func AutoControlPanel(window fyne.Window) fyne.CanvasObject {
 	var selectedComputer []string
 
 	connectButton := controller.InitConnectButton(&selectedComputer)
-	//connectButton.OnTapped = func() {
-	//	window.SetContent(MinimizedAutoControlPanel(window))
-	//}
 
 	backButton := func() {
 		window.SetContent(Opening(window))
@@ -27,8 +24,15 @@ func AutoControlPanel(window fyne.Window) fyne.CanvasObject {
 		window.SetContent(AutoControlPanel(window))
 	}
 
-	leftPart, computerBoxes := helper.InitLeftPanel(serverIP, &selectedComputer, connectButton)
-	rightPart := helper.InitAutoRightPanel(window, serverIP, &selectedComputer, computerBoxes, connectButton, backButton, refreshButton)
+	// Create a periodic refresh function to update button state
+	updateButtonState := func() {
+		isConnected := controller.IsConnected()
+		connectedClients := controller.GetConnectedClients()
+		helper.UpdateConnectButtonStateWithConnectionInfo(connectButton, selectedComputer, isConnected, connectedClients)
+	}
+
+	leftPart, computerBoxes := helper.InitLeftPanelWithConnectionInfo(serverIP, &selectedComputer, connectButton, updateButtonState)
+	rightPart := helper.InitAutoRightPanelWithConnectionInfo(window, serverIP, &selectedComputer, computerBoxes, connectButton, backButton, refreshButton, updateButtonState)
 
 	controlPanelPage := container.NewHSplit(leftPart, rightPart)
 	controlPanelPage.SetOffset(0.6)

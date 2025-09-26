@@ -56,6 +56,11 @@ func InitLeftPanel(serverIP string, selectedComputer *[]string, connectButton *w
 	return leftPart, computerBoxes
 }
 
+func InitLeftPanelWithConnectionInfo(serverIP string, selectedComputer *[]string, connectButton *widget.Button, updateButtonState func()) (*fyne.Container, []fyne.CanvasObject) {
+	computerBoxes, leftPart := UpdateComputerListWithConnectionInfo(serverIP, selectedComputer, connectButton, updateButtonState)
+	return leftPart, computerBoxes
+}
+
 func InitManualRightPanel(
 	window fyne.Window,
 	serverIP string,
@@ -175,6 +180,33 @@ func InitAutoRightPanel(
 	return container.NewVBox(header, layout.NewSpacer(), selectAllCheckbox, refreshButton, connectButton)
 }
 
+func InitAutoRightPanelWithConnectionInfo(
+	window fyne.Window,
+	serverIP string,
+	selectedComputer *[]string,
+	computerBoxes []fyne.CanvasObject,
+	connectButton *widget.Button,
+	backCallback func(),
+	refreshCallback func(),
+	updateButtonState func(),
+) *fyne.Container {
+	header := InitHeader(window, serverIP, backCallback)
+
+	selectAllCheckbox := widget.NewCheck("Select All", func(checked bool) {
+		HandleSelectAllWithConnectionInfo(checked, selectedComputer, computerBoxes, connectButton, updateButtonState)
+	})
+
+	refreshButton := widget.NewButton("Refresh", func() {
+		fmt.Println("Refreshing Page")
+		refreshCallback()
+	})
+
+	// Initial button state update
+	updateButtonState()
+
+	return container.NewVBox(header, layout.NewSpacer(), selectAllCheckbox, refreshButton, connectButton)
+}
+
 func UpdateConnectButtonState(connectButton *widget.Button, selectedComputer []string) {
 	if len(selectedComputer) > 0 {
 		connectButton.Importance = widget.HighImportance
@@ -183,6 +215,58 @@ func UpdateConnectButtonState(connectButton *widget.Button, selectedComputer []s
 		connectButton.Importance = widget.MediumImportance
 		connectButton.Disable()
 	}
+}
+
+func UpdateConnectButtonStateWithConnectionInfo(connectButton *widget.Button, selectedComputer []string, isConnected bool, connectedClients []string) {
+	if !isConnected {
+		// No connections - show Connect button
+		if len(selectedComputer) > 0 {
+			connectButton.SetText("Connect")
+			connectButton.Importance = widget.HighImportance
+			connectButton.Enable()
+		} else {
+			connectButton.SetText("Connect")
+			connectButton.Importance = widget.MediumImportance
+			connectButton.Disable()
+		}
+	} else {
+		// There are existing connections
+		if len(selectedComputer) == 0 {
+			connectButton.SetText("Disconnect All")
+			connectButton.Importance = widget.DangerImportance
+			connectButton.Enable()
+		} else {
+			// Check if selected computers include new ones
+			hasNewConnections := hasNewConnectionsToAdd(selectedComputer, connectedClients)
+			
+			if hasNewConnections {
+				connectButton.SetText("Add New Connections")
+				connectButton.Importance = widget.SuccessImportance
+				connectButton.Enable()
+			} else {
+				connectButton.SetText("Disconnect All")
+				connectButton.Importance = widget.DangerImportance
+				connectButton.Enable()
+			}
+		}
+	}
+	connectButton.Refresh()
+}
+
+func hasNewConnectionsToAdd(selectedComputer []string, connectedClients []string) bool {
+	for _, selected := range selectedComputer {
+		isAlreadyConnected := false
+		for _, connected := range connectedClients {
+			if selected == connected {
+				isAlreadyConnected = true
+				break
+			}
+		}
+		if !isAlreadyConnected {
+			return true
+		}
+	}
+	return false
 }
 
 func HandleSelectAll(checked bool, selectedComputer *[]string, computerBoxes []fyne.CanvasObject, connectButton *widget.Button) {
@@ -208,6 +292,29 @@ func HandleSelectAll(checked bool, selectedComputer *[]string, computerBoxes []f
 	UpdateConnectButtonState(connectButton, *selectedComputer)
 }
 
+func HandleSelectAllWithConnectionInfo(checked bool, selectedComputer *[]string, computerBoxes []fyne.CanvasObject, connectButton *widget.Button, updateButtonState func()) {
+	*selectedComputer = []string{}
+
+	if checked {
+		for _, item := range computerBoxes {
+			if button, ok := item.(*widget.Button); ok && !button.Disabled() && button.Importance != widget.WarningImportance {
+				button.Importance = widget.SuccessImportance
+				*selectedComputer = append(*selectedComputer, button.Text)
+				button.Refresh()
+			}
+		}
+	} else {
+		for _, item := range computerBoxes {
+			if button, ok := item.(*widget.Button); ok && !button.Disabled() && button.Importance != widget.WarningImportance {
+				button.Importance = widget.MediumImportance
+				button.Refresh()
+			}
+		}
+	}
+
+	updateButtonState()
+}
+
 func pingAndUpdate(button *widget.Button, ipAddress string) {
 	pinger, err := ping.NewPinger(ipAddress)
 	if err != nil {
@@ -226,15 +333,110 @@ func pingAndUpdate(button *widget.Button, ipAddress string) {
 
 	stats := pinger.Statistics()
 	if stats.PacketsRecv > 0 {
-		
 		button.Enable()
 		button.Importance = widget.MediumImportance
 	} else {
-		
 		button.Importance = widget.DangerImportance
 		button.Disable()
 	}
 	button.Refresh()
+}
+
+func pingAndUpdateWithConnectionInfo(button *widget.Button, ipAddress string, updateButtonState func()) {
+	pinger, err := ping.NewPinger(ipAddress)
+	if err != nil {
+		log.Printf("Failed to create pinger for %s: %v", ipAddress, err)
+		return
+	}
+
+	pinger.Count = 1
+	pinger.Timeout = time.Second * 1
+	pinger.SetPrivileged(true) 
+
+	err = pinger.Run() 
+	if err != nil {
+		log.Printf("Pinger failed to run for %s: %v", ipAddress, err)
+	}
+
+	stats := pinger.Statistics()
+	if stats.PacketsRecv > 0 {
+		button.Enable()
+		button.Importance = widget.MediumImportance
+	} else {
+		button.Importance = widget.DangerImportance
+		button.Disable()
+	}
+	button.Refresh()
+}
+
+func UpdateComputerListWithConnectionInfo(serverIP string, selectedComputer *[]string, connectButton *widget.Button, updateButtonState func()) ([]fyne.CanvasObject, *fyne.Container) {
+	var computerList []object.Computer
+
+	// Generate computer list
+	lastDotIndex := strings.LastIndex(serverIP, ".")
+	networkPrefix := "10.22.65" 
+
+	if lastDotIndex != -1 {
+		networkPrefix = serverIP[:lastDotIndex]
+	} else {
+		log.Printf("Warning: Could not determine network prefix from server IP '%s'. Using default.", serverIP)
+	}
+
+	// Generate IP range from 101 to 141
+	for i := 101; i <= 141; i++ {
+		computer := object.Computer{
+			IPAddress: fmt.Sprintf("%s.%v", networkPrefix, i),
+			Status:    "Available",
+		}
+		computerList = append(computerList, computer)
+	}
+	
+	// Create computer boxes
+	var computerBoxes []fyne.CanvasObject
+
+	for _, computer := range computerList {
+		ipAddr := computer.IPAddress
+		buttonText := ipAddr
+		
+		button := widget.NewButton(buttonText, nil)
+
+		if ipAddr == serverIP {
+			button.Importance = widget.WarningImportance
+			button.Disable()
+		} else {
+			button.Importance = widget.LowImportance
+			button.Disable()
+			go pingAndUpdateWithConnectionInfo(button, ipAddr, updateButtonState)
+		}
+
+		button.OnTapped = func() {
+			isCurrentlySelected := false
+			for _, ip := range *selectedComputer {
+				if ip == button.Text {
+					isCurrentlySelected = true
+					break
+				}
+			}
+
+			if !isCurrentlySelected {
+				button.Importance = widget.SuccessImportance
+				*selectedComputer = append(*selectedComputer, button.Text)
+			} else {
+				button.Importance = widget.MediumImportance
+				newSelection := []string{}
+				for _, ip := range *selectedComputer {
+					if ip != button.Text {
+						newSelection = append(newSelection, ip)
+					}
+				}
+				*selectedComputer = newSelection
+			}
+			updateButtonState()
+			button.Refresh()
+		}
+		computerBoxes = append(computerBoxes, button)
+	}
+	return computerBoxes, container.NewGridWithColumns(5, computerBoxes...)
 }
 
 func UpdateComputerList(serverIP string, selectedComputer *[]string, connectButton *widget.Button) ([]fyne.CanvasObject, *fyne.Container) {
