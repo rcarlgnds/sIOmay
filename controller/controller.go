@@ -36,6 +36,29 @@ var envBytes []byte
 func SetAuthToken(token string) {
 	authToken = token
 }
+func VerifyToken(token string) (string, error) {
+	url := "https://api-ruman.apps.slc.net/auth/verify-token"
+
+	req, err := http.NewRequest("POST", url, nil)
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	body, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return "", err
+	}
+
+	return string(body), nil
+}
 
 func GetAuthToken() string {
 	return authToken
@@ -84,6 +107,10 @@ func init(){
 	}()
 }
 func InitConnectButton(selectedComputer *[]string) *widget.Button {
+	return InitConnectButtonWithCallback(selectedComputer, nil)
+}
+
+func InitConnectButtonWithCallback(selectedComputer *[]string, onConnectionChange func()) *widget.Button {
 	button := widget.NewButton("Connect", nil)
 	
 	button.OnTapped = func() {
@@ -123,10 +150,19 @@ func InitConnectButton(selectedComputer *[]string) *widget.Button {
 				}
 			}
 			
+			fmt.Printf("Debug - Selected: %v, Connected: %v, New: %v\n", *selectedComputer, connectedClients, newConnections)
+			
 			if len(newConnections) > 0 {
 				// Adding new connections
 				fmt.Printf("Adding new connections to %v\n", newConnections)
 				AddNewConnections(newConnections)
+				// Clear selection after adding connections
+				*selectedComputer = []string{}
+				fmt.Println("Cleared selected computers after adding connections")
+				// Notify UI that connections changed
+				if onConnectionChange != nil {
+					onConnectionChange()
+				}
 			} else {
 				// Disconnect all
 				fmt.Println("Disconnect button clicked - starting disconnection...")
@@ -162,6 +198,7 @@ func AddNewConnections(newIPs []string) {
 	err := RunRuman(newIPs, startSiomayId)
 	if err != nil {
 		fmt.Printf("Error running Ruman for new connections: %v\n", err)
+		return
 	}
 	
 	fmt.Printf("New connections added. Total connected clients: %v\n", connectedClients)

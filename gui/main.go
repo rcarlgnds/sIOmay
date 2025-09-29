@@ -19,6 +19,11 @@ func main() {
 		os.Exit(1)
 	}
 	controller.SetAuthToken(*token)
+	_, err := controller.VerifyToken(*token)
+	if err != nil {
+		fmt.Println("Error verifying token:", err)
+		os.Exit(1)
+	}
 	application := app.New()
 	window := application.NewWindow("sIOmay 🥟")
 	window.Resize(fyne.NewSize(1100, 550))

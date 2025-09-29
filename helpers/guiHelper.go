@@ -189,22 +189,52 @@ func InitAutoRightPanelWithConnectionInfo(
 	backCallback func(),
 	refreshCallback func(),
 	updateButtonState func(),
-) *fyne.Container {
+) (*fyne.Container, *widget.Label) {
 	header := InitHeader(window, serverIP, backCallback)
 
 	selectAllCheckbox := widget.NewCheck("Select All", func(checked bool) {
 		HandleSelectAllWithConnectionInfo(checked, selectedComputer, computerBoxes, connectButton, updateButtonState)
 	})
 
+	// Connected computers display
+	connectedLabel := widget.NewLabelWithStyle("Connected Computers:", fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
+	connectedList := widget.NewLabel("None")
+	
+	// Function to update connected computers display
+	updateConnectedDisplay := func() {
+		// Get connected clients from controller
+		// We'll need to import controller here or pass the info as parameter
+		connectedText := "None"
+		// This will be updated by the periodic refresh in autoControlPanel
+		connectedList.SetText(connectedText)
+	}
+	
 	refreshButton := widget.NewButton("Refresh", func() {
 		fmt.Println("Refreshing Page")
 		refreshCallback()
 	})
 
+	disconnectAllButton := widget.NewButton("Disconnect All", func() {
+		// This will disconnect all connections
+		fmt.Println("Disconnecting all connections")
+		// TODO: Implement disconnect all functionality
+	})
+
 	// Initial button state update
 	updateButtonState()
+	updateConnectedDisplay()
 
-	return container.NewVBox(header, layout.NewSpacer(), selectAllCheckbox, refreshButton, connectButton)
+	rightPanel := container.NewVBox(header, layout.NewSpacer(), 
+		selectAllCheckbox, 
+		layout.NewSpacer(),
+		connectedLabel,
+		connectedList,
+		layout.NewSpacer(),
+		refreshButton, 
+		connectButton,
+		disconnectAllButton)
+	
+	return rightPanel, connectedList
 }
 
 func UpdateConnectButtonState(connectButton *widget.Button, selectedComputer []string) {
@@ -218,16 +248,20 @@ func UpdateConnectButtonState(connectButton *widget.Button, selectedComputer []s
 }
 
 func UpdateConnectButtonStateWithConnectionInfo(connectButton *widget.Button, selectedComputer []string, isConnected bool, connectedClients []string) {
+	fmt.Printf("UpdateConnectButtonState - Selected: %v, Connected: %v, IsConnected: %v\n", selectedComputer, connectedClients, isConnected)
+	
 	if !isConnected {
 		// No connections - show Connect button
 		if len(selectedComputer) > 0 {
 			connectButton.SetText("Connect")
 			connectButton.Importance = widget.HighImportance
 			connectButton.Enable()
+			fmt.Println("Button set to: Connect (enabled)")
 		} else {
 			connectButton.SetText("Connect")
 			connectButton.Importance = widget.MediumImportance
 			connectButton.Disable()
+			fmt.Println("Button set to: Connect (disabled)")
 		}
 	} else {
 		// There are existing connections
@@ -235,18 +269,22 @@ func UpdateConnectButtonStateWithConnectionInfo(connectButton *widget.Button, se
 			connectButton.SetText("Disconnect All")
 			connectButton.Importance = widget.DangerImportance
 			connectButton.Enable()
+			fmt.Println("Button set to: Disconnect All")
 		} else {
 			// Check if selected computers include new ones
 			hasNewConnections := hasNewConnectionsToAdd(selectedComputer, connectedClients)
+			fmt.Printf("Has new connections: %v\n", hasNewConnections)
 			
 			if hasNewConnections {
 				connectButton.SetText("Add New Connections")
 				connectButton.Importance = widget.SuccessImportance
 				connectButton.Enable()
+				fmt.Println("Button set to: Add New Connections")
 			} else {
 				connectButton.SetText("Disconnect All")
 				connectButton.Importance = widget.DangerImportance
 				connectButton.Enable()
+				fmt.Println("Button set to: Disconnect All (no new connections)")
 			}
 		}
 	}
@@ -254,6 +292,7 @@ func UpdateConnectButtonStateWithConnectionInfo(connectButton *widget.Button, se
 }
 
 func hasNewConnectionsToAdd(selectedComputer []string, connectedClients []string) bool {
+	fmt.Printf("Checking for new connections - Selected: %v, Connected: %v\n", selectedComputer, connectedClients)
 	for _, selected := range selectedComputer {
 		isAlreadyConnected := false
 		for _, connected := range connectedClients {
@@ -263,9 +302,11 @@ func hasNewConnectionsToAdd(selectedComputer []string, connectedClients []string
 			}
 		}
 		if !isAlreadyConnected {
+			fmt.Printf("Found new connection: %s\n", selected)
 			return true
 		}
 	}
+	fmt.Println("No new connections found")
 	return false
 }
 
@@ -431,6 +472,8 @@ func UpdateComputerListWithConnectionInfo(serverIP string, selectedComputer *[]s
 				}
 				*selectedComputer = newSelection
 			}
+			
+			// Immediately update button state with connection info
 			updateButtonState()
 			button.Refresh()
 		}

@@ -1,6 +1,7 @@
 package pages
 
 import (
+	"fmt"
 	"sIOmay/controller"
 	helper "sIOmay/helpers"
 	"time"
@@ -13,6 +14,7 @@ import (
 func AutoControlPanel(window fyne.Window) fyne.CanvasObject {
 	serverIP, _ := helper.GetServerIP()
 	var selectedComputer []string
+	var computerBoxes []fyne.CanvasObject
 
 	connectButton := controller.InitConnectButton(&selectedComputer)
 
@@ -31,8 +33,50 @@ func AutoControlPanel(window fyne.Window) fyne.CanvasObject {
 		helper.UpdateConnectButtonStateWithConnectionInfo(connectButton, selectedComputer, isConnected, connectedClients)
 	}
 
+	// Callback to clear selections and update UI when connections change
+	clearSelections := func() {
+		// Clear all selections from the computer boxes
+		for _, computerBox := range computerBoxes {
+			if btn, ok := computerBox.(*widget.Button); ok && btn.Importance == widget.SuccessImportance {
+				btn.Importance = widget.MediumImportance
+				btn.Refresh()
+			}
+		}
+		selectedComputer = []string{}
+		updateButtonState()
+	}
+
 	leftPart, computerBoxes := helper.InitLeftPanelWithConnectionInfo(serverIP, &selectedComputer, connectButton, updateButtonState)
-	rightPart := helper.InitAutoRightPanelWithConnectionInfo(window, serverIP, &selectedComputer, computerBoxes, connectButton, backButton, refreshButton, updateButtonState)
+	rightPart, connectedListLabel := helper.InitAutoRightPanelWithConnectionInfo(window, serverIP, &selectedComputer, computerBoxes, connectButton, backButton, refreshButton, updateButtonState)
+
+	// Start a goroutine to periodically update the UI and check for connection changes
+	go func() {
+		lastConnectedCount := len(controller.GetConnectedClients())
+		for {
+			time.Sleep(500 * time.Millisecond) // Update every 500ms
+			
+			connectedClients := controller.GetConnectedClients()
+			currentConnectedCount := len(connectedClients)
+			
+			// Update connected computers display
+			if currentConnectedCount == 0 {
+				connectedListLabel.SetText("None")
+			} else {
+				connectedText := fmt.Sprintf("%d connected: %v", currentConnectedCount, connectedClients)
+				if len(connectedText) > 50 {
+					connectedText = fmt.Sprintf("%d connected", currentConnectedCount)
+				}
+				connectedListLabel.SetText(connectedText)
+			}
+			
+			if currentConnectedCount != lastConnectedCount {
+				// Connection state changed, clear selections
+				clearSelections()
+				lastConnectedCount = currentConnectedCount
+			}
+			updateButtonState()
+		}
+	}()
 
 	controlPanelPage := container.NewHSplit(leftPart, rightPart)
 	controlPanelPage.SetOffset(0.6)
