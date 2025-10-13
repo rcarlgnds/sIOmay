@@ -12,6 +12,14 @@ import (
 )
 
 func main() {
+	defer func() {
+		if r := recover(); r != nil {
+			fmt.Printf("Application crashed with panic: %v\n", r)
+			fmt.Println("Performing emergency client disconnection...")
+			controller.ForceDisconnectAllClients()
+		}
+	}()
+
 	token := flag.String("token", "", "Token for authentication")
 	flag.Parse()
 	if *token == "" {
@@ -24,10 +32,18 @@ func main() {
 		fmt.Println("Error verifying token:", err)
 		os.Exit(1)
 	}
+
 	application := app.New()
 	window := application.NewWindow("sIOmay 🥟")
 	window.Resize(fyne.NewSize(1100, 550))
 	window.CenterOnScreen()
+
+	window.SetCloseIntercept(func() {
+		fmt.Println("Application closing. Disconnecting all clients...")
+		controller.ForceDisconnectAllClients()
+		window.Close()
+	})
+
 	window.SetContent(pages.Opening(window))
 
 	window.ShowAndRun()

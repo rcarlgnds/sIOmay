@@ -7,11 +7,14 @@ import (
 	"io/ioutil"
 	"net"
 	"net/http"
+	"os"
+	"os/signal"
 	"runtime"
 	helper "sIOmay/helpers"
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 	"unsafe"
 
@@ -78,6 +81,12 @@ func GetConnectedClients() []string {
 	return result
 }
 
+func HasActiveConnections() bool {
+	connectionMutex.Lock()
+	defer connectionMutex.Unlock()
+	return len(connectedClients) > 0
+}
+
 const (
 	ServerPort    = 8080
 	SleepDuration = 1 * time.Millisecond  
@@ -98,6 +107,8 @@ var (
 	connectionMutex  sync.Mutex
 	serverWg        sync.WaitGroup
 	authToken       string
+	cleanupDone      = false
+	cleanupMutex     sync.Mutex
 )
 
 func init(){
@@ -105,6 +116,76 @@ func init(){
 	go func() {
 		C.startSiomayServerC()
 	}()
+	
+	// Set up signal handling for graceful shutdown
+	setupGracefulShutdown()
+}
+
+// SetupGracefulShutdown configures signal handlers to disconnect clients on app termination
+func setupGracefulShutdown() {
+	c := make(chan os.Signal, 1)
+	
+	// Listen for various termination signals
+	// On Windows: SIGINT (Ctrl+C), SIGTERM
+	// On Unix-like systems: SIGINT, SIGTERM, SIGHUP, SIGQUIT
+	signals := []os.Signal{os.Interrupt, syscall.SIGTERM}
+	
+	// Add Unix-specific signals if available
+	if runtime.GOOS != "windows" {
+		signals = append(signals, syscall.SIGHUP, syscall.SIGQUIT)
+	}
+	
+	signal.Notify(c, signals...)
+	
+	go func() {
+		sig := <-c
+		fmt.Printf("\nReceived %v signal. Disconnecting all clients...\n", sig)
+		ForceDisconnectAllClients()
+		fmt.Println("Cleanup completed. Exiting.")
+		os.Exit(0)
+	}()
+}
+
+func ForceDisconnectAllClients() {
+	cleanupMutex.Lock()
+	defer cleanupMutex.Unlock()
+	
+	if cleanupDone {
+		return // Already cleaned up
+	}
+	
+	fmt.Println("Force disconnecting all clients...")
+	
+	connectionMutex.Lock()
+	clientsToDisconnect := make([]string, len(connectedClients))
+	copy(clientsToDisconnect, connectedClients)
+	connectionMutex.Unlock()
+	
+	if len(clientsToDisconnect) > 0 {
+		fmt.Printf("Disconnecting from clients: %v\n", clientsToDisconnect)
+		
+		stopSiomayClient := "0078d9f9-e676-4fed-a89f-480a1a0ed45f"
+		err := RunRuman(clientsToDisconnect, stopSiomayClient)
+		if err != nil {
+			fmt.Printf("Error sending stop command: %v\n", err)
+		}
+		
+		// Stop server for each IP
+		for _, remoteMachine := range clientsToDisconnect {
+			StopServerForIP(remoteMachine)
+		}
+		
+		fmt.Println("All clients disconnected successfully")
+	}
+	
+	// Reset connection state
+	connectionMutex.Lock()
+	isConnected = false
+	currentClients = nil
+	connectedClients = nil
+	connectionMutex.Unlock()
+	
+	cleanupDone = true
 }
 func InitConnectButton(selectedComputer *[]string) *widget.Button {
 	return InitConnectButtonWithCallback(selectedComputer, nil)
@@ -171,9 +252,9 @@ func InitConnectButtonWithCallback(selectedComputer *[]string, onConnectionChang
 				
 				go func() {
 					DisconnectFromClients()
+					// Force disconnect handles the state reset, so we just need to update the button
 					connectionMutex.Lock()
 					isConnected = false
-					connectedClients = []string{}
 					connectionMutex.Unlock()
 					button.SetText("Connect")
 					button.Refresh()
@@ -206,16 +287,7 @@ func AddNewConnections(newIPs []string) {
 
 func DisconnectFromClients() {
 	fmt.Println("Starting disconnection process...")
-	fmt.Println("Server goroutine finished.")
-
-	stopSiomayClient := "0078d9f9-e676-4fed-a89f-480a1a0ed45f"
-	RunRuman(currentClients, stopSiomayClient)
-	for _, remoteMachine := range currentClients {
-		StopServerForIP(remoteMachine)
-	}
-
-	currentClients = nil
-	connectedClients = nil
+	ForceDisconnectAllClients()
 }
 
 
