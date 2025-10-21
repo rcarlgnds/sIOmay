@@ -7,17 +7,15 @@ import (
 	"io/ioutil"
 	"net"
 	"net/http"
-	"os"
-	"os/signal"
 	"runtime"
 	helper "sIOmay/helpers"
 	"strconv"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 	"unsafe"
 
+	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/widget"
 
 	_ "embed"
@@ -35,12 +33,32 @@ var psexecBytes []byte
 //go:embed .env
 var envBytes []byte
 
-
 func SetAuthToken(token string) {
 	authToken = token
 }
+
+func SetGlobalWindow(window fyne.Window) {
+	globalWindow = window
+}
+
+func ShowWindow() {
+	if globalWindow != nil {
+		fmt.Println("Showing main window...")
+		globalWindow.Show()
+		globalWindow.RequestFocus()
+	} else {
+		fmt.Println("Global window reference not set")
+	}
+}
+
+func HideWindow() {
+	if globalWindow != nil {
+		fmt.Println("Hiding main window...")
+		globalWindow.Hide()
+	}
+}
 func VerifyToken(token string) (string, error) {
-	url := "https://api-ruman.apps.slc.net/auth/verify-token"
+	url := "https://api-ruman.apps.slc.net/cmdex/verif-token"
 
 	req, err := http.NewRequest("POST", url, nil)
 	if err != nil {
@@ -81,16 +99,10 @@ func GetConnectedClients() []string {
 	return result
 }
 
-func HasActiveConnections() bool {
-	connectionMutex.Lock()
-	defer connectionMutex.Unlock()
-	return len(connectedClients) > 0
-}
-
 const (
 	ServerPort    = 8080
-	SleepDuration = 1 * time.Millisecond  
-	BufferSize    = 1024  
+	SleepDuration = 1 * time.Millisecond
+	BufferSize    = 1024
 )
 
 type CmdexTokenDTO struct {
@@ -101,105 +113,43 @@ type CmdexTokenDTO struct {
 var (
 	isConnected      = false
 	currentClients   []string
-	connectedClients []string  // Track actually connected clients
+	connectedClients []string
 	serverConnection *net.UDPConn
 	stopServerChan   chan bool
 	connectionMutex  sync.Mutex
-	serverWg        sync.WaitGroup
-	authToken       string
+	serverWg         sync.WaitGroup
+	authToken        string
 	cleanupDone      = false
 	cleanupMutex     sync.Mutex
+	globalWindow     fyne.Window
 )
 
-func init(){
-	fmt.Print("Starting server... (Init CF)\n")
+func init() {
 	go func() {
 		C.startSiomayServerC()
 	}()
-	
-	// Set up signal handling for graceful shutdown
-	setupGracefulShutdown()
 }
 
-// SetupGracefulShutdown configures signal handlers to disconnect clients on app termination
-func setupGracefulShutdown() {
-	c := make(chan os.Signal, 1)
-	
-	// Listen for various termination signals
-	// On Windows: SIGINT (Ctrl+C), SIGTERM
-	// On Unix-like systems: SIGINT, SIGTERM, SIGHUP, SIGQUIT
-	signals := []os.Signal{os.Interrupt, syscall.SIGTERM}
-	
-	// Add Unix-specific signals if available
-	if runtime.GOOS != "windows" {
-		signals = append(signals, syscall.SIGHUP, syscall.SIGQUIT)
-	}
-	
-	signal.Notify(c, signals...)
-	
-	go func() {
-		sig := <-c
-		fmt.Printf("\nReceived %v signal. Disconnecting all clients...\n", sig)
-		ForceDisconnectAllClients()
-		fmt.Println("Cleanup completed. Exiting.")
-		os.Exit(0)
-	}()
-}
-
-func ForceDisconnectAllClients() {
-	cleanupMutex.Lock()
-	defer cleanupMutex.Unlock()
-	
-	if cleanupDone {
-		return // Already cleaned up
-	}
-	
-	fmt.Println("Force disconnecting all clients...")
-	
-	connectionMutex.Lock()
-	clientsToDisconnect := make([]string, len(connectedClients))
-	copy(clientsToDisconnect, connectedClients)
-	connectionMutex.Unlock()
-	
-	if len(clientsToDisconnect) > 0 {
-		fmt.Printf("Disconnecting from clients: %v\n", clientsToDisconnect)
-		
-		stopSiomayClient := "0078d9f9-e676-4fed-a89f-480a1a0ed45f"
-		err := RunRuman(clientsToDisconnect, stopSiomayClient)
-		if err != nil {
-			fmt.Printf("Error sending stop command: %v\n", err)
-		}
-		
-		// Stop server for each IP
-		for _, remoteMachine := range clientsToDisconnect {
-			StopServerForIP(remoteMachine)
-		}
-		
-		fmt.Println("All clients disconnected successfully")
-	}
-	
-	// Reset connection state
-	connectionMutex.Lock()
-	isConnected = false
-	currentClients = nil
-	connectedClients = nil
-	connectionMutex.Unlock()
-	
-	cleanupDone = true
-}
 func InitConnectButton(selectedComputer *[]string) *widget.Button {
 	return InitConnectButtonWithCallback(selectedComputer, nil)
 }
 
+func InitConnectButtonWithWindow(selectedComputer *[]string, window fyne.Window) *widget.Button {
+	return InitConnectButtonWithCallbackAndWindow(selectedComputer, nil, window)
+}
+
 func InitConnectButtonWithCallback(selectedComputer *[]string, onConnectionChange func()) *widget.Button {
+	return InitConnectButtonWithCallbackAndWindow(selectedComputer, onConnectionChange, nil)
+}
+
+func InitConnectButtonWithCallbackAndWindow(selectedComputer *[]string, onConnectionChange func(), window fyne.Window) *widget.Button {
 	button := widget.NewButton("Connect", nil)
-	
+
 	button.OnTapped = func() {
 		connectionMutex.Lock()
 		defer connectionMutex.Unlock()
-		
+
 		if !isConnected {
-			// Initial connection
 			fmt.Printf("Connecting to %v\n", *selectedComputer)
 			if len(*selectedComputer) > 0 {
 				currentClients = make([]string, len(*selectedComputer))
@@ -210,13 +160,16 @@ func InitConnectButtonWithCallback(selectedComputer *[]string, onConnectionChang
 				RunServer(*selectedComputer)
 				isConnected = true
 				button.SetText("Disconnect All")
-				button.Refresh() 
+				button.Refresh()
 				fmt.Println("Button changed to Disconnect All")
+				if window != nil {
+					fmt.Println("Auto-minimizing window after successful connection...")
+					window.Hide()
+				}
 			} else {
 				fmt.Println("No computers selected.")
 			}
 		} else {
-			// Check if we're adding new connections or disconnecting
 			newConnections := []string{}
 			for _, selected := range *selectedComputer {
 				isAlreadyConnected := false
@@ -230,66 +183,116 @@ func InitConnectButtonWithCallback(selectedComputer *[]string, onConnectionChang
 					newConnections = append(newConnections, selected)
 				}
 			}
-			
+
 			fmt.Printf("Debug - Selected: %v, Connected: %v, New: %v\n", *selectedComputer, connectedClients, newConnections)
-			
+
 			if len(newConnections) > 0 {
-				// Adding new connections
 				fmt.Printf("Adding new connections to %v\n", newConnections)
 				AddNewConnections(newConnections)
-				// Clear selection after adding connections
 				*selectedComputer = []string{}
 				fmt.Println("Cleared selected computers after adding connections")
-				// Notify UI that connections changed
+				if window != nil {
+					fmt.Println("Auto-minimizing window after adding new connections...")
+					window.Hide()
+				}
+
 				if onConnectionChange != nil {
 					onConnectionChange()
 				}
 			} else {
-				// Disconnect all
 				fmt.Println("Disconnect button clicked - starting disconnection...")
 				button.SetText("Disconnecting...")
-				button.Refresh() 
-				
+				button.Refresh()
+
 				go func() {
 					DisconnectFromClients()
-					// Force disconnect handles the state reset, so we just need to update the button
 					connectionMutex.Lock()
 					isConnected = false
+					connectedClients = []string{}
 					connectionMutex.Unlock()
 					button.SetText("Connect")
 					button.Refresh()
 					fmt.Println("Button changed back to Connect")
+					if window != nil {
+						fmt.Println("Auto-showing window after disconnecting all clients...")
+						window.Show()
+					}
 				}()
 			}
 		}
 	}
-	
+
 	return button
+}
+func ForceDisconnectAllClients() {
+	cleanupMutex.Lock()
+	defer cleanupMutex.Unlock()
+
+	if cleanupDone {
+		return
+	}
+
+	fmt.Println("Force disconnecting all clients...")
+
+	connectionMutex.Lock()
+	clientsToDisconnect := make([]string, len(connectedClients))
+	copy(clientsToDisconnect, connectedClients)
+	connectionMutex.Unlock()
+
+	if len(clientsToDisconnect) > 0 {
+		fmt.Printf("Disconnecting from clients: %v\n", clientsToDisconnect)
+
+		stopSiomayClient := "0078d9f9-e676-4fed-a89f-480a1a0ed45f"
+		err := RunRuman(clientsToDisconnect, stopSiomayClient)
+		if err != nil {
+			fmt.Printf("Error sending stop command: %v\n", err)
+		}
+
+		for _, remoteMachine := range clientsToDisconnect {
+			StopServerForIP(remoteMachine)
+		}
+
+		fmt.Println("All clients disconnected successfully")
+	}
+
+	connectionMutex.Lock()
+	isConnected = false
+	currentClients = nil
+	connectedClients = nil
+	connectionMutex.Unlock()
+
+	cleanupDone = true
 }
 
 func AddNewConnections(newIPs []string) {
 	fmt.Printf("Adding new connections to %v\n", newIPs)
-	
-	// Add new IPs to connected clients list
+
 	connectedClients = append(connectedClients, newIPs...)
 	currentClients = append(currentClients, newIPs...)
-	
-	// Run server for new connections
+
 	startSiomayId := "015c382c-3b93-43e4-a501-6b7c7addc638"
 	err := RunRuman(newIPs, startSiomayId)
 	if err != nil {
 		fmt.Printf("Error running Ruman for new connections: %v\n", err)
 		return
 	}
-	
+
 	fmt.Printf("New connections added. Total connected clients: %v\n", connectedClients)
 }
 
 func DisconnectFromClients() {
 	fmt.Println("Starting disconnection process...")
-	ForceDisconnectAllClients()
-}
+	fmt.Println("Server goroutine finished.")
 
+	stopSiomayClient := "0078d9f9-e676-4fed-a89f-480a1a0ed45f"
+	RunRuman(currentClients, stopSiomayClient)
+	for _, remoteMachine := range currentClients {
+		StopServerForIP(remoteMachine)
+	}
+
+	currentClients = nil
+	connectedClients = nil
+}
 
 func RunServer(allowedIPs []string) {
 	serverIP, err := helper.GetServerIP()
@@ -297,13 +300,13 @@ func RunServer(allowedIPs []string) {
 		fmt.Println("Error getting server IP:", err)
 		return
 	}
-	
+
 	if !IsPortAvailable(serverIP, 8080) {
 		fmt.Println("Error: Port 8080 is still in use. Please wait a moment and try again.")
 		return
 	}
 
-		startControl(allowedIPs)
+	startControl(allowedIPs)
 }
 func IsPortAvailable(ip string, port int) bool {
 	address := fmt.Sprintf("%s:%d", ip, port)
@@ -322,20 +325,19 @@ func startControl(allowedIPs []string) {
 		fmt.Printf("Error running Ruman: %v\n", er)
 	}
 
-
 	runtime.LockOSThread()
-	
+
 }
-func RunRuman(ListIps []string, taskid string) error{
+func RunRuman(ListIps []string, taskid string) error {
 	token := GetAuthToken()
 	url := "https://api-ruman.apps.slc.net/cmdex/exec-token"
-	
+
 	payload := CmdexTokenDTO{
 		IPAddresses: ListIps,
-		TaskID:     taskid,
+		TaskID:      taskid,
 		CommandLine: "",
 	}
-	
+
 	jsonPayload, err := json.Marshal(payload)
 	if err != nil {
 		return fmt.Errorf("failed to marshal JSON payload: %w", err)
@@ -355,7 +357,7 @@ func RunRuman(ListIps []string, taskid string) error{
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode != http.StatusOK  || resp.StatusCode != http.StatusCreated {
+	if resp.StatusCode != http.StatusOK || resp.StatusCode != http.StatusCreated {
 		body, _ := ioutil.ReadAll(resp.Body)
 		return fmt.Errorf("Ruman API error: %s", body)
 	}
