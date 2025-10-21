@@ -16,7 +16,7 @@ func AutoControlPanel(window fyne.Window) fyne.CanvasObject {
 	var selectedComputer []string
 	var computerBoxes []fyne.CanvasObject
 
-	connectButton := controller.InitConnectButton(&selectedComputer)
+	connectButton := controller.InitConnectButtonWithWindow(&selectedComputer, window)
 
 	backButton := func() {
 		window.SetContent(Opening(window))
@@ -54,10 +54,10 @@ func AutoControlPanel(window fyne.Window) fyne.CanvasObject {
 		lastConnectedCount := len(controller.GetConnectedClients())
 		for {
 			time.Sleep(500 * time.Millisecond) // Update every 500ms
-			
+
 			connectedClients := controller.GetConnectedClients()
 			currentConnectedCount := len(connectedClients)
-			
+
 			// Update connected computers display
 			if currentConnectedCount == 0 {
 				connectedListLabel.SetText("None")
@@ -68,7 +68,7 @@ func AutoControlPanel(window fyne.Window) fyne.CanvasObject {
 				}
 				connectedListLabel.SetText(connectedText)
 			}
-			
+
 			if currentConnectedCount != lastConnectedCount {
 				// Connection state changed, clear selections
 				clearSelections()

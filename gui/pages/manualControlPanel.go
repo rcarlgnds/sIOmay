@@ -22,11 +22,10 @@ func ManualControlPanel(window fyne.Window) fyne.CanvasObject {
 	var selectedComputer []string
 	var computerBoxes []fyne.CanvasObject
 
-
 	leftContent := container.NewCenter(widget.NewLabel("Enter an IP range and click Scan..."))
 	leftScroll := container.NewScroll(leftContent)
-	
-	connectButton := controller.InitConnectButton(&selectedComputer)
+
+	connectButton := controller.InitConnectButtonWithWindow(&selectedComputer, window)
 
 	backButton := func() {
 		window.SetContent(Opening(window))
@@ -67,7 +66,7 @@ func ManualControlPanel(window fyne.Window) fyne.CanvasObject {
 
 		leftScroll.Content = newGrid
 		leftScroll.Refresh()
-		computerBoxes = newBoxes 
+		computerBoxes = newBoxes
 	}
 
 	selectAllCheckbox := widget.NewCheck("Select All", func(checked bool) {
@@ -76,7 +75,7 @@ func ManualControlPanel(window fyne.Window) fyne.CanvasObject {
 
 	rightPart.Add(widget.NewSeparator())
 	rightPart.Add(selectAllCheckbox)
-	rightPart.Add(connectButton) 
+	rightPart.Add(connectButton)
 
 	controlPanelPage := container.NewHSplit(leftScroll, rightPart)
 	controlPanelPage.SetOffset(0.6)

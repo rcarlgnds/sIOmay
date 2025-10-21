@@ -2,10 +2,11 @@ package helpers
 
 import (
 	"fmt"
-	"github.com/eiannone/keyboard"
-	hook "github.com/robotn/gohook"
 	"strconv"
 	"sync"
+
+	"github.com/eiannone/keyboard"
+	hook "github.com/robotn/gohook"
 )
 
 type Keyboard struct {
@@ -58,6 +59,59 @@ func (k *Keyboard) ListenForGlobalKeyboardEvents(events chan<- *Keyboard) error 
 	return nil
 }
 
+func StartGlobalHotkeyListener(showWindowCallback func(), disconnectAllClients func()) {
+	fmt.Println("Starting global hotkey listener for Ctrl+Shift+LeftAlt...")
+
+	var ctrlPressed, shiftPressed, altPressed bool
+	var lastTriggered bool
+
+	go func() {
+		for ev := range hook.Start() {
+			fmt.Printf("Key event: Kind=%d, Rawcode=%d\n", ev.Kind, ev.Rawcode)
+
+			switch ev.Kind {
+			case hook.KeyHold:
+				fmt.Printf("Key DOWN: Rawcode=%d\n", ev.Rawcode)
+				switch ev.Rawcode {
+				case 162: // Left Ctrl key
+					ctrlPressed = true
+				case 160: // Left Shift key
+					shiftPressed = true
+				case 164: // Left Alt key
+					altPressed = true
+				}
+			case hook.KeyUp:
+				fmt.Printf("Key UP: Rawcode=%d\n", ev.Rawcode)
+				switch ev.Rawcode {
+				case 162: // Left Ctrl key released
+					ctrlPressed = false
+				case 160: // Left Shift key released
+					shiftPressed = false
+				case 164: // Left Alt key released
+					altPressed = false
+				}
+			}
+
+			if ctrlPressed || shiftPressed || altPressed {
+				fmt.Printf("Current state: Ctrl=%t, Shift=%t, Alt=%t\n", ctrlPressed, shiftPressed, altPressed)
+			}
+
+			if ctrlPressed && shiftPressed && altPressed {
+				if !lastTriggered {
+					fmt.Println("🎯 HOTKEY DETECTED: Ctrl+Shift+LeftAlt - Calling ShowWindow()")
+					if showWindowCallback != nil {
+						showWindowCallback()
+						disconnectAllClients()
+					}
+					lastTriggered = true
+				}
+			} else {
+				lastTriggered = false
+			}
+		}
+	}()
+}
+
 func (k *Keyboard) ListenForKeyboardEvents(events chan<- *Keyboard) {
 	err := keyboard.Open()
 	if err != nil {
@@ -72,7 +126,6 @@ func (k *Keyboard) ListenForKeyboardEvents(events chan<- *Keyboard) {
 	k.isRunning = true
 
 	for k.isRunning {
-		// Read the next key event
 		char, key, err := keyboard.GetKey()
 		if err != nil {
 			fmt.Println("Error reading keyboard: ", err)

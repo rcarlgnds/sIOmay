@@ -6,6 +6,7 @@ import (
 	"os"
 	"sIOmay/controller"
 	"sIOmay/gui/pages"
+	"sIOmay/helpers"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/app"
@@ -16,7 +17,7 @@ func main() {
 		if r := recover(); r != nil {
 			fmt.Printf("Application crashed with panic: %v\n", r)
 			fmt.Println("Performing emergency client disconnection...")
-			controller.ForceDisconnectAllClients()
+			controller.DisconnectFromClients()
 		}
 	}()
 
@@ -31,6 +32,8 @@ func main() {
 	if err != nil {
 		fmt.Println("Error verifying token:", err)
 		os.Exit(1)
+	}else{
+		fmt.Println("DEXTER BODOH")
 	}
 
 	application := app.New()
@@ -38,9 +41,13 @@ func main() {
 	window.Resize(fyne.NewSize(1100, 550))
 	window.CenterOnScreen()
 
+	controller.SetGlobalWindow(window)
+
+	helpers.StartGlobalHotkeyListener(controller.ShowWindow, controller.DisconnectFromClients)
+
 	window.SetCloseIntercept(func() {
 		fmt.Println("Application closing. Disconnecting all clients...")
-		controller.ForceDisconnectAllClients()
+		controller.DisconnectFromClients()
 		window.Close()
 	})
 
