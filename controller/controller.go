@@ -77,6 +77,9 @@ func VerifyToken(token string) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("token verification failed: HTTP %d - %s", resp.StatusCode, string(body))
+	}
 
 	return string(body), nil
 }
@@ -110,6 +113,7 @@ type CmdexTokenDTO struct {
 	TaskID      string   `json:"task_id"`
 	CommandLine string   `json:"commandLine"`
 }
+
 var (
 	isConnected      = false
 	currentClients   []string
