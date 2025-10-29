@@ -16,6 +16,14 @@ import (
 	"github.com/go-ping/ping"
 )
 
+func getNetworkPrefix(ip string) string {
+	parts := strings.Split(ip, ".")
+	if len(parts) >= 3 {
+		return strings.Join(parts[:3], ".")
+	}
+	return "LAN ERROR"
+}
+
 func InitHeader(window fyne.Window, serverIP string, backCallback func()) *fyne.Container {
 	os := runtime.GOOS
 
@@ -68,10 +76,16 @@ func InitManualRightPanel(
 	refreshCallback func(),
 ) (*fyne.Container, *widget.Entry, *widget.Entry, *widget.Entry, *widget.Button) {
 	header := InitHeader(window, serverIP, backCallback)
-
-	networkAddressLabel := widget.NewLabel("Network Address (e.g., 192.168.1)")
+	networkPrefix := getNetworkPrefix(serverIP)
+	networkAddressLabel := widget.NewLabel("Network Address")
 	networkAddressInputField := widget.NewEntry()
-	networkAddressInputField.SetPlaceHolder("192.168.1")
+	networkAddressInputField.SetText(networkPrefix)
+	networkAddressInputField.SetPlaceHolder(networkPrefix)
+	networkAddressInputField.OnChanged = func(text string) {
+		if text != networkPrefix {
+			networkAddressInputField.SetText(networkPrefix)
+		}
+	}
 
 	fromLabel := widget.NewLabel("From")
 	fromInputField := widget.NewEntry()
@@ -81,14 +95,19 @@ func InitManualRightPanel(
 	toInputField := widget.NewEntry()
 	toInputField.SetPlaceHolder("141")
 
-	scanButton := widget.NewButton("Scan IP Range", nil) 
+	scanButton := widget.NewButton("Scan IP Range", nil)
 	scanButton.Importance = widget.HighImportance
 
 	refreshButton := widget.NewButton("Refresh Page", func() {
 		refreshCallback()
 	})
+	hotkeyLabel := widget.NewLabel("Control + Shift + Left Alt: to show sIOmay controller GUI")
+	hotkeyLabel.Wrapping = fyne.TextWrapWord
+
 	rightPanel := container.NewVBox(
 		header,
+		layout.NewSpacer(),
+		hotkeyLabel,
 		layout.NewSpacer(),
 		networkAddressLabel,
 		networkAddressInputField,
@@ -199,7 +218,7 @@ func InitAutoRightPanelWithConnectionInfo(
 	// Connected computers display
 	connectedLabel := widget.NewLabelWithStyle("Connected Computers:", fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
 	connectedList := widget.NewLabel("None")
-	
+
 	// Function to update connected computers display
 	updateConnectedDisplay := func() {
 		// Get connected clients from controller
@@ -208,7 +227,7 @@ func InitAutoRightPanelWithConnectionInfo(
 		// This will be updated by the periodic refresh in autoControlPanel
 		connectedList.SetText(connectedText)
 	}
-	
+
 	refreshButton := widget.NewButton("Refresh", func() {
 		fmt.Println("Refreshing Page")
 		refreshCallback()
@@ -224,16 +243,16 @@ func InitAutoRightPanelWithConnectionInfo(
 	updateButtonState()
 	updateConnectedDisplay()
 
-	rightPanel := container.NewVBox(header, layout.NewSpacer(), 
-		selectAllCheckbox, 
+	rightPanel := container.NewVBox(header, layout.NewSpacer(),
+		selectAllCheckbox,
 		layout.NewSpacer(),
 		connectedLabel,
 		connectedList,
 		layout.NewSpacer(),
-		refreshButton, 
+		refreshButton,
 		connectButton,
 		disconnectAllButton)
-	
+
 	return rightPanel, connectedList
 }
 
@@ -249,7 +268,7 @@ func UpdateConnectButtonState(connectButton *widget.Button, selectedComputer []s
 
 func UpdateConnectButtonStateWithConnectionInfo(connectButton *widget.Button, selectedComputer []string, isConnected bool, connectedClients []string) {
 	fmt.Printf("UpdateConnectButtonState - Selected: %v, Connected: %v, IsConnected: %v\n", selectedComputer, connectedClients, isConnected)
-	
+
 	if !isConnected {
 		// No connections - show Connect button
 		if len(selectedComputer) > 0 {
@@ -274,7 +293,7 @@ func UpdateConnectButtonStateWithConnectionInfo(connectButton *widget.Button, se
 			// Check if selected computers include new ones
 			hasNewConnections := hasNewConnectionsToAdd(selectedComputer, connectedClients)
 			fmt.Printf("Has new connections: %v\n", hasNewConnections)
-			
+
 			if hasNewConnections {
 				connectButton.SetText("Add New Connections")
 				connectButton.Importance = widget.SuccessImportance
@@ -365,9 +384,9 @@ func pingAndUpdate(button *widget.Button, ipAddress string) {
 
 	pinger.Count = 1
 	pinger.Timeout = time.Second * 1
-	pinger.SetPrivileged(true) 
+	pinger.SetPrivileged(true)
 
-	err = pinger.Run() 
+	err = pinger.Run()
 	if err != nil {
 		log.Printf("Pinger failed to run for %s: %v", ipAddress, err)
 	}
@@ -392,9 +411,9 @@ func pingAndUpdateWithConnectionInfo(button *widget.Button, ipAddress string, up
 
 	pinger.Count = 1
 	pinger.Timeout = time.Second * 1
-	pinger.SetPrivileged(true) 
+	pinger.SetPrivileged(true)
 
-	err = pinger.Run() 
+	err = pinger.Run()
 	if err != nil {
 		log.Printf("Pinger failed to run for %s: %v", ipAddress, err)
 	}
@@ -415,7 +434,7 @@ func UpdateComputerListWithConnectionInfo(serverIP string, selectedComputer *[]s
 
 	// Generate computer list
 	lastDotIndex := strings.LastIndex(serverIP, ".")
-	networkPrefix := "10.22.65" 
+	networkPrefix := "10.22.65"
 
 	if lastDotIndex != -1 {
 		networkPrefix = serverIP[:lastDotIndex]
@@ -431,14 +450,14 @@ func UpdateComputerListWithConnectionInfo(serverIP string, selectedComputer *[]s
 		}
 		computerList = append(computerList, computer)
 	}
-	
+
 	// Create computer boxes
 	var computerBoxes []fyne.CanvasObject
 
 	for _, computer := range computerList {
 		ipAddr := computer.IPAddress
 		buttonText := ipAddr
-		
+
 		button := widget.NewButton(buttonText, nil)
 
 		if ipAddr == serverIP {
@@ -472,7 +491,7 @@ func UpdateComputerListWithConnectionInfo(serverIP string, selectedComputer *[]s
 				}
 				*selectedComputer = newSelection
 			}
-			
+
 			// Immediately update button state with connection info
 			updateButtonState()
 			button.Refresh()
@@ -485,22 +504,16 @@ func UpdateComputerListWithConnectionInfo(serverIP string, selectedComputer *[]s
 func UpdateComputerList(serverIP string, selectedComputer *[]string, connectButton *widget.Button) ([]fyne.CanvasObject, *fyne.Container) {
 	var computerList []object.Computer
 
-	
-
-	
 	lastDotIndex := strings.LastIndex(serverIP, ".")
-	networkPrefix := "10.22.65" 
+	networkPrefix := "10.22.65"
 
 	if lastDotIndex != -1 {
-		
-		
+
 		networkPrefix = serverIP[:lastDotIndex]
 	} else {
 		log.Printf("Warning: Could not determine network prefix from server IP '%s'. Using default.", serverIP)
 	}
 
-
-	
 	for i := 101; i <= 141; i++ {
 		computer := object.Computer{
 			IPAddress: fmt.Sprintf("%s.%v", networkPrefix, i),
@@ -508,11 +521,7 @@ func UpdateComputerList(serverIP string, selectedComputer *[]string, connectButt
 		}
 		computerList = append(computerList, computer)
 	}
-	
-	
 
-
-	
 	var computerBoxes []fyne.CanvasObject
 
 	for _, computer := range computerList {
