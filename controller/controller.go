@@ -22,7 +22,7 @@ import (
 )
 
 /*
-#cgo LDFLAGS: -L. -lcor -lstdc++ -lws2_32 -luser32 -static
+#cgo LDFLAGS: -L. -lcgo_compatible -lstdc++ -lws2_32 -luser32 -static
 #include "../backend/internal_lib/extern.hpp"
 */
 import "C"
@@ -77,7 +77,7 @@ func VerifyToken(token string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if resp.StatusCode != http.StatusOK {
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
 		return "", fmt.Errorf("token verification failed: HTTP %d - %s", resp.StatusCode, string(body))
 	}
 

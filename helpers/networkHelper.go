@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"net"
+	"os/exec"
+	"regexp"
 
 	"sIOmay/object"
 	"sort"
@@ -32,7 +34,61 @@ import (
 // 	fmt.Println("Server started")
 // }
 
+func getIPFromDNSSuffix(dnsSuffix string) (string, error) {
+	cmd := exec.Command("ipconfig", "/all")
+	output, err := cmd.Output()
+	if err != nil {
+		return "", fmt.Errorf("failed to execute ipconfig: %v", err)
+	}
+
+	outputStr := string(output)
+	lines := strings.Split(outputStr, "\n")
+
+	var currentAdapter string
+	var foundTargetAdapter bool
+	var ipAddress string
+
+	adapterRegex := regexp.MustCompile(`^([^:]+):$`)
+	dnsSuffixRegex := regexp.MustCompile(`^\s*Connection-specific DNS Suffix\s*\.\s*:\s*(.+)$`)
+	ipRegex := regexp.MustCompile(`^\s*IPv4 Address\s*\..*:\s*([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+)`)
+
+	for _, line := range lines {
+		line = strings.TrimRight(line, "\r")
+
+		if match := adapterRegex.FindStringSubmatch(line); match != nil {
+			currentAdapter = strings.TrimSpace(match[1])
+			foundTargetAdapter = false
+			ipAddress = ""
+			continue
+		}
+
+		if match := dnsSuffixRegex.FindStringSubmatch(line); match != nil {
+			suffix := strings.TrimSpace(match[1])
+			if suffix == dnsSuffix {
+				foundTargetAdapter = true
+				fmt.Printf("Found adapter '%s' with DNS suffix '%s'\n", currentAdapter, dnsSuffix)
+			}
+			continue
+		}
+
+		if foundTargetAdapter {
+			if match := ipRegex.FindStringSubmatch(line); match != nil {
+				ipAddress = strings.TrimSpace(match[1])
+				fmt.Printf("Found IP address '%s' for adapter '%s'\n", ipAddress, currentAdapter)
+				return ipAddress, nil
+			}
+		}
+	}
+
+	return "", fmt.Errorf("no interface found with DNS suffix '%s'", dnsSuffix)
+}
+
 func GetServerIP() (string, error) {
+	ip, err := getIPFromDNSSuffix("ad.slc.net")
+	if err == nil && ip != "" {
+		return ip, nil
+	}
+
 	interfaces, err := net.Interfaces()
 	if err != nil {
 		return "", err
@@ -151,7 +207,6 @@ func GetAllClients(serverIP string) []object.Computer {
 
 	return clients
 }
-
 
 func SendKeyboardMessageToClients(keyboard *Keyboard, clientAddresses map[string]*net.UDPAddr, connection *net.UDPConn) {
 	messageBytes, err := json.Marshal(keyboard)

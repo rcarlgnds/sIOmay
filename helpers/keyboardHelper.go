@@ -101,7 +101,7 @@ func StartGlobalHotkeyListener(showWindowCallback func(), disconnectAllClients f
 					fmt.Println("🎯 HOTKEY DETECTED: Ctrl+Shift+LeftAlt - Calling ShowWindow()")
 					if showWindowCallback != nil {
 						showWindowCallback()
-						disconnectAllClients()
+						// disconnectAllClients()
 					}
 					lastTriggered = true
 				}
