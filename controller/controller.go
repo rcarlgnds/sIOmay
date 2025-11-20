@@ -22,7 +22,8 @@ import (
 )
 
 /*
-#cgo LDFLAGS: -L. -lcgo_compatible -lstdc++ -lws2_32 -luser32 -static
+#cgo windows LDFLAGS: -L. -lcgo_compatible -lstdc++ -lws2_32 -luser32 -static
+#cgo darwin LDFLAGS: -L. -lmaccompatible -lstdc++
 #include "../backend/internal_lib/extern.hpp"
 */
 import "C"
@@ -361,7 +362,7 @@ func RunRuman(ListIps []string, taskid string) error {
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode != http.StatusOK || resp.StatusCode != http.StatusCreated {
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
 		body, _ := ioutil.ReadAll(resp.Body)
 		return fmt.Errorf("Ruman API error: %s", body)
 	}
